@@ -1,0 +1,80 @@
+name: Redact CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Backend tests
+        run: |
+          cd backend
+          pip install -r requirements.txt -r requirements-test.txt
+          pytest tests/ -v --tb=short --junitxml=test-results.xml
+      - name: Frontend tests
+        run: |
+          cd frontend
+          npm ci
+          npm test -- --run --reporter=verbose
+
+  sast:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Bandit (Python SAST)
+        run: pip install bandit && bandit -r backend/ -f json -o bandit-report.json
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/owasp-top-ten
+
+  sca:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run pip-audit (Python dependencies)
+        run: pip install pip-audit && pip-audit -r backend/requirements.txt
+      - name: Run npm audit (Frontend dependencies)
+        run: cd frontend && npm audit --audit-level=high
+
+  secrets:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run TruffleHog on our own repo
+        run: |
+          docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest \
+            git file:///repo --only-verified --fail
+
+  iac:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Checkov on Terraform
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform/
+
+  container:
+    runs-on: ubuntu-latest
+    needs: [sast, sca, secrets, iac]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker images
+        run: docker compose build
+      - name: Run Trivy on backend image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: redact-backend:latest
+          severity: CRITICAL,HIGH
