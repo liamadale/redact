@@ -91,6 +91,10 @@ The GitHub Actions pipeline includes:
 - **IaC** — Checkov on Terraform configs
 - **Container** — Docker build + Trivy scan
 
+## AI Disclosure
+
+This project uses AI-assisted development tools (including Claude and GitHub Copilot) for code generation, documentation, and development workflows. All AI-generated output is reviewed and validated by the team before being committed. See [`CLAUDE.md`](CLAUDE.md) for AI coding guidelines.
+
 ## License
 
 [MIT](LICENSE)
