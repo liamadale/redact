@@ -16,4 +16,4 @@ COPY --from=builder /install /usr/local
 COPY --from=trufflehog /usr/local/bin/trufflehog /usr/local/bin/trufflehog
 COPY backend/ .
 USER redact
-CMD ["celery", "-A", "worker", "worker", "--loglevel=info", "--concurrency=3"]
+CMD ["celery", "-A", "app.worker", "worker", "--loglevel=info", "--concurrency=3"]
