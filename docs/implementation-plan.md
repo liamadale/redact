@@ -1080,34 +1080,34 @@ If the live demo breaks (it always can), have:
 
 > Fill this in as a team. Each person should own one primary area but be able to help on others.
 
-### Sprint 1: Foundation (Apr 14 – Apr 27)
-- [ ] GitHub repo setup with branch protection
-- [ ] Docker Compose with all services (even if mostly stubs)
-- [ ] FastAPI backend skeleton with health check endpoint
-- [ ] React frontend skeleton with routing
-- [ ] PostgreSQL schema migration (Alembic)
+### Sprint 1: Foundation (Apr 14 – Apr 27) ✅
+- [x] GitHub repo setup with branch protection
+- [x] Docker Compose with all services (even if mostly stubs)
+- [x] FastAPI backend skeleton with health check endpoint
+- [x] React frontend skeleton with routing
+- [x] PostgreSQL schema migration (Alembic)
   - Migration strategy: during development, use `alembic downgrade base && alembic upgrade head` (drop-and-recreate) since there's no production data to preserve. All team members run `alembic upgrade head` after pulling. Schema changes require a new migration file — no manual SQL.
-- [ ] TruffleHog binary installed in worker container
-- [ ] Basic CI pipeline (lint + test)
+- [x] TruffleHog binary installed in worker container
+- [x] Basic CI pipeline (lint + test)
 
 **Milestone:** `docker compose up` starts all services, frontend loads, backend responds to `/health`
 
 ### Sprint 2: Scanning Engine (Apr 28 – May 11)
-- [ ] GitHub adapter: list repos for org/user
-- [ ] Quick scan: Search API integration
-- [ ] Deep scan: clone + TruffleHog subprocess
-- [ ] Celery worker for background scan jobs
-- [ ] Store findings in PostgreSQL
-- [ ] Basic API endpoints: start scan, get scan status, get findings
+- [x] GitHub adapter: list repos for org/user
+- [x] Quick scan: Search API integration
+- [x] Deep scan: clone + TruffleHog subprocess
+- [x] Celery worker for background scan jobs
+- [x] Store findings in PostgreSQL
+- [x] Basic API endpoints: start scan, get scan status, get findings
 
 **Milestone:** Can trigger a scan via API and get JSON results back
 
 ### Sprint 3: Frontend Core (May 12 – May 25)
-- [ ] Landing page with scan input
-- [ ] Quick scan results view (triage cards)
-- [ ] Deep scan progress (SSE real-time updates)
-- [ ] Dashboard: summary cards, repo breakdown table
-- [ ] Dark mode / Tokyo Night styling
+- [x] Landing page with scan input
+- [x] Quick scan results view (triage cards)
+- [x] Deep scan progress (SSE real-time updates)
+- [x] Dashboard: summary cards, repo breakdown table
+- [x] Dark mode / Tokyo Night styling
 
 **Milestone:** Can trigger a scan from the browser and see results populate in real-time
 

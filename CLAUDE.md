@@ -41,6 +41,10 @@ cd backend && ruff format .
 cd frontend && npm run format
 ```
 
+## Pre-commit Checks
+
+Always run `ruff check .` before committing Python changes. Fix all errors — no `noqa` unless the violation is unavoidable (e.g., Alembic `env.py` import ordering).
+
 ## Code Style
 
 ### Python (Backend)
