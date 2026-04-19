@@ -12,7 +12,7 @@ Redact is a web-based git secrets auditor. It scans GitHub orgs/repos for leaked
 - **Backend:** Python 3.12, FastAPI, Celery + Redis, PostgreSQL, Alembic
 - **Frontend:** React 18, Vite, TypeScript, Tailwind CSS, shadcn/ui, TanStack Query, Zustand, Recharts
 - **Scanner:** TruffleHog CLI (called as subprocess from Celery worker — never imported as a library)
-- **Infra:** Docker Compose (5 services: frontend, backend, worker, redis, db)
+- **Infra:** Docker Compose (6 services: frontend, backend, worker, beat, redis, db)
 
 ## Commands
 
@@ -171,9 +171,12 @@ Rules:
 ## Security Boundaries
 
 - IMPORTANT: Never display, log, or store full secret values. Always redact.
-- IMPORTANT: Never enable TruffleHog `--only-verified` on repos the user doesn't own — this makes API calls with stolen credentials.
+- IMPORTANT: Redact scans **public repositories only**. The `GitHubAdapter` must check `repo.is_private` and reject private repos before any scan job is queued. Error: `"Private repositories are not supported."` This applies everywhere — org listings, manual repo entry, auto-PR — no exceptions.
+- IMPORTANT: Never pass `--only-verified` to TruffleHog. It only filters output — it does not prevent live verification API calls, which TruffleHog makes by default for all supported detectors. Use TruffleHog's native `Verified` field in JSON output to set `verified=True` and `severity='critical'` on findings.
+- IMPORTANT: `raw_detector_output` must have `Raw` and `RawV2` fields removed before INSERT — these contain the plaintext secret. Keep `ExtraData` (contains useful metadata like AWS account ID).
 - IMPORTANT: Cloned repos must be deleted after scanning — use `finally` blocks. The worker startup hook and Celery Beat task clean up orphans.
-- IMPORTANT: GitHub PATs must never touch the database or logs. In-memory session storage only.
+- IMPORTANT: GitHub PATs are used for GitHub API calls (rate limits) only — never passed to `git clone` (public repos need no credentials) and never passed to Celery workers. In-memory FastAPI session only.
+- IMPORTANT: `session_id` in the DB is stored as `SHA256(raw_session_token)` — never the raw token.
 
 ## When Compacting Context
 
