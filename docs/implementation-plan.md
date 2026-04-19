@@ -70,20 +70,31 @@ Redact wraps TruffleHog as the scanning backend and focuses effort on the presen
 │                                                          │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
 │  │ Scan Manager │  │ Report Engine │  │ Platform       │  │
-│  │ (orchestrate │  │ (PDF gen,     │  │ Adapters       │  │
-│  │  TruffleHog) │  │  compliance)  │  │ (GitHub first, │  │
+│  │ (queue jobs  │  │ (PDF gen,     │  │ Adapters       │  │
+│  │  via Celery) │  │  compliance)  │  │ (GitHub first, │  │
 │  └──────┬──────┘  └──────────────┘  │  GitLab later) │  │
 │         │                            └────────────────┘  │
-└─────────┼────────────────────────────────────────────────┘
-          │ subprocess
+└─────────┼──────────────────┬─────────────────────────────┘
+          │ Celery task       │ session read/write
+          │                   │ SSE pub/sub
+┌─────────▼──────────────────▼─────────────────────────────┐
+│              Redis                                        │
+│  • Celery broker (task queue)                            │
+│  • SSE pub/sub (scan:{id} channels)                      │
+│  • Server-side session store (session:{uuid} + PAT, TTL) │
+└─────────┬──────────────────┬─────────────────────────────┘
+          │ Celery task       │ publish progress
 ┌─────────▼────────────────────────────────────────────────┐
-│              TruffleHog CLI (binary)                      │
-│         Called as subprocess, JSON output parsed          │
-└──────────────────────────────────────────────────────────┘
+│              Celery Worker                                │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │ Calls TruffleHog CLI as subprocess, parses JSON  │    │
+│  │ output, writes findings to PostgreSQL             │    │
+│  └──────────────────────────────────────────────────┘    │
+└─────────┬────────────────────────────────────────────────┘
           │
 ┌─────────▼────────────────────────────────────────────────┐
 │              PostgreSQL Database                          │
-│  Scan results, user sessions, org/repo metadata          │
+│  Scan results, org/repo metadata, compliance mappings    │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -95,7 +106,7 @@ Redact wraps TruffleHog as the scanning backend and focuses effort on the presen
 | Backend | Python + FastAPI | Team knows Python; FastAPI is async, fast, auto-generates OpenAPI docs |
 | Scanner | TruffleHog (CLI, subprocess) | Most mature scanner; 800+ detectors; live verification; called via subprocess to avoid AGPL copyleft |
 | Database | PostgreSQL | Robust, free, handles JSON well for scan results |
-| PDF Reports | WeasyPrint or ReportLab | Python-native PDF generation from HTML/CSS templates |
+| PDF Reports | WeasyPrint | HTML/CSS → PDF via Jinja2 templates; requires Cairo/Pango in Docker image but enables professional styling without manual layout code |
 | Containerization | Docker Compose | Simple multi-container orchestration; no need for K8s at this scale |
 | Reverse Proxy | Nginx | TLS termination, static file serving, rate limiting |
 | Task Queue | Celery + Redis | Background scan jobs so the UI doesn't block |
@@ -107,6 +118,7 @@ services:
   frontend:       # React app served by Nginx
   backend:        # FastAPI application
   worker:         # Celery worker for background scans (includes TruffleHog binary)
+  beat:           # Celery Beat scheduler (periodic cleanup of orphaned /tmp/scans)
   redis:          # Message broker for Celery + SSE pub/sub
   db:             # PostgreSQL
 ```
@@ -144,9 +156,6 @@ class PlatformAdapter(ABC):
     async def list_repos(self, org: str) -> list[Repo]: ...
 
     @abstractmethod
-    async def get_clone_url(self, repo: Repo) -> str: ...
-
-    @abstractmethod
     async def search_code(self, org: str, patterns: list[str]) -> list[SearchHit]:
         """Run multiple pattern searches against an org.
         The adapter handles looping, rate limiting, and deduplication internally.
@@ -162,14 +171,22 @@ class GitHubAdapter(PlatformAdapter): ...
 
 Redact is a single-user, session-based tool — no user accounts or registration.
 
-**GitHub PAT handling:**
-- User pastes a GitHub Personal Access Token on the landing page
-- Token is stored **in-memory only** in the FastAPI session (server-side, encrypted session cookie)
-- Token is **never written to the database** or logged
-- Token is passed to the `GitHubAdapter` per-request and to `git clone` via environment variable
-- Session expires after 2 hours of inactivity; token is discarded
-- If no token is provided, Redact falls back to unauthenticated requests (60 req/hr — barely usable, but functional for a single-repo scan)
-- **Stretch — Auto-PR Remediation:** If the user opts in to automated PR creation (see Section 4), the PAT requires `public_repo` scope (or full `repo` for private repos). This elevated scope is only requested when the feature is enabled. Without it, Redact operates read-only
+**Public repositories only.** Redact intentionally scans only public repositories. Private repositories are explicitly out of scope:
+- The risk of leaked credentials in private repos is significantly lower (they're not publicly exposed)
+- Scanning private repos requires passing a PAT to `git clone` inside Celery workers, which would transit the token through Redis (the message broker) — an unnecessary credential exposure risk
+- If a user submits a private repo URL or a private repo appears in an org listing, Redact rejects it with a clear error: `"Private repositories are not supported. Redact only scans public repositories."`
+- The `GitHubAdapter` checks `repo.is_private` before queuing any scan job and filters private repos out of org listings with a visible count: `"Skipped N private repositories"`
+
+**GitHub PAT handling (rate-limit use only):**
+- A GitHub PAT is optional — Redact works without one (unauthenticated: 60 req/hr for REST, 10 req/min for Search API)
+- With a PAT, rate limits increase to 5,000 req/hr REST and 30 req/min Search — necessary for org-wide scans
+- PAT is used **only for GitHub API calls** (listing repos, searching code) — never for `git clone`, since all cloned repos are public and require no credentials
+- Token is stored **server-side in Redis** under a session key: `session:{uuid}` with a 2-hour TTL
+- The browser receives only an opaque session ID in a `HttpOnly; Secure; SameSite=Strict` cookie — the PAT never crosses the network to the client
+- Token is **never written to the database, passed to Celery workers, or logged**
+- Token is retrieved from Redis per-request within the FastAPI process and passed to `GitHubAdapter` only
+- Session expires after 2 hours (Redis TTL); token is discarded automatically
+- **Stretch — Auto-PR Remediation:** Requires `public_repo` scope on the PAT. This scope is only requested when the feature is enabled. The backend validates `target_type == 'user'` (never `org`) before allowing PR creation — this is enforced server-side, not just in the UI.
 
 **Why no user accounts:**
 - Avoids building auth infrastructure for a 9-week project
@@ -178,8 +195,15 @@ Redact is a single-user, session-based tool — no user accounts or registration
 
 **Scan scoping:**
 - All scans are tied to the session that initiated them via `session_id` on the `scans` table
-- No cross-session data leakage — each session only sees its own scan results
-- On session expiry, scan data persists in the DB (for report generation) but the token is gone
+- `session_id` is stored as `SHA256(session_uuid)` — never the raw UUID from the cookie. The backend hashes the session UUID before every DB read/write. This means a DB read gives an attacker a useless hash, not a forgeable session cookie.
+- Within a session, the dashboard shows all scans for that session (convenience listing)
+- **Session-free access:** Every scan's UUID is returned at creation and acts as an unguessable access token. The following endpoints accept a scan UUID directly, with no session required:
+  - `GET /scans/{uuid}` — scan status and findings
+  - `GET /scans/{uuid}/findings` — paginated findings
+  - `GET /scans/{uuid}/report` — PDF report download
+- This means users can bookmark or share a scan URL and access it after session expiry or from another browser
+- UUIDs are v4 (122 bits of entropy) — unguessable, so no additional auth is needed for read-only access
+- On session expiry, the GitHub PAT is discarded but scan data and reports remain accessible via UUID
 
 ---
 
@@ -194,10 +218,11 @@ Fast, zero-storage scan that identifies repos with obvious secret patterns.
 **How it works:**
 1. User enters a GitHub org name or username
 2. Backend hits `GET /search/code?q={pattern}+org:{orgname}` for each known pattern
-3. Patterns searched: `AKIA`, `sk_live_`, `sk_test_`, `-----BEGIN RSA PRIVATE KEY-----`, `-----BEGIN OPENSSH PRIVATE KEY-----`, `ghp_`, `gho_`, `glpat-`, `xoxb-`, `xoxp-`, common password assignment patterns
-   - Pattern sources: [TruffleHog detector list](https://github.com/trufflesecurity/trufflehog/tree/main/pkg/detectors), [GitGuardian State of Secrets Sprawl 2026](https://www.gitguardian.com/state-of-secrets-sprawl-report-2025) (top leaked secret types), [GitHub Secret Scanning partner patterns](https://docs.github.com/en/code-security/secret-scanning/introduction/supported-secret-scanning-patterns)
-4. Results displayed immediately in the UI as a "triage view"
-5. User can then trigger a deep scan on specific repos
+3. Patterns searched: `AKIA`, `sk_live_`, `sk_test_`, `BEGIN RSA PRIVATE KEY`, `BEGIN OPENSSH PRIVATE KEY`, `BEGIN EC PRIVATE KEY`, `ghp_`, `gho_`, `glpat-`, `xoxb-`, `xoxp-`, common password assignment patterns
+   - Note: GitHub Search API tokenizes queries — full PEM headers (`-----BEGIN RSA PRIVATE KEY-----`) don't work as literals. Search for the inner text only.
+   - Pattern sources: [TruffleHog detector list](https://github.com/trufflesecurity/trufflehog/tree/main/pkg/detectors), [GitGuardian State of Secrets Sprawl 2025](https://www.gitguardian.com/state-of-secrets-sprawl-report-2025) (top leaked secret types), [GitHub Secret Scanning partner patterns](https://docs.github.com/en/code-security/secret-scanning/introduction/supported-secret-scanning-patterns)
+4. Results are stored in the `search_hits` table and displayed immediately in the UI as a "triage view"
+5. User can then trigger a deep scan on specific repos (the triage view queries `search_hits WHERE scan_id = ?` to list repos with hits)
 
 **Rate limit handling:**
 - Authenticated requests: 30 requests/minute for Search API
@@ -215,12 +240,13 @@ Full git history scan with regex, entropy, and optional verification.
 
 **How it works:**
 1. User selects repos from Phase 1 results (or manually enters a repo)
-2. Celery worker picks up the scan job
-3. Worker clones repo: `git clone --bare {url} /tmp/scans/{job_id}/{repo_name}`
-4. Worker runs: `trufflehog git file:///tmp/scans/{job_id}/{repo_name} --json --all-branches`
-5. JSON output is parsed and stored in PostgreSQL
-6. Cloned repo is deleted immediately after scan
-7. Frontend receives results via SSE (Server-Sent Events)
+2. Backend validates all selected repos are public (`is_private == False`) — private repos are rejected before the job is queued
+3. Celery worker picks up the scan job, lists all repos, writes `repos_total` to the DB — UI shows an indeterminate spinner until this is set, then switches to a percentage progress bar
+4. Worker clones repo (no credentials needed — all repos are public): `git clone --mirror {url} /tmp/scans/{job_id}/{repo_name}`
+5. Worker runs: `trufflehog git file:///tmp/scans/{job_id}/{repo_name} --json --all-branches`
+6. JSON output is parsed and stored in PostgreSQL
+7. Cloned repo is deleted immediately after scan
+8. Frontend receives results via SSE (Server-Sent Events)
 
 **Celery → SSE Progress Bridge:**
 
@@ -244,13 +270,18 @@ Celery Worker                Redis                    FastAPI                  B
 - SSE is simpler than WebSocket for this one-directional flow (server → client only)
 - If the SSE connection drops, the frontend falls back to polling `GET /scans/{id}` every 5 seconds
 
+> **SSE Reconnection Strategy:** Redis pub/sub has no message replay — events published while the client is disconnected are lost. On reconnect, the frontend must fetch the full scan state via `GET /scans/{id}` (including all findings discovered so far) to reconcile, then re-subscribe to the SSE stream for new events. This avoids the complexity of implementing a sequence-number-based catch-up protocol.
+
 **TruffleHog invocation (incremental reading):**
 ```python
 import subprocess
 import json
+import logging
 import threading
 
-def run_trufflehog(repo_path: str, verify: bool = False,
+logger = logging.getLogger(__name__)
+
+def run_trufflehog(repo_path: str,
                    timeout: int = 300, on_finding=None) -> tuple[list[dict], bool]:
     cmd = [
         "trufflehog", "git",
@@ -258,18 +289,16 @@ def run_trufflehog(repo_path: str, verify: bool = False,
         "--json",
         "--all-branches",
     ]
-    if verify:
-        cmd.append("--only-verified")
+    # TruffleHog attempts live verification internally for all supported detectors
+    # and reports Verified: true/false on each finding. --only-verified is intentionally
+    # omitted — it would hide unverified findings without preventing the API calls.
 
     findings = []
-    timed_out = False
+    timed_out = threading.Event()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-    # Kill the process after `timeout` seconds — this closes stdout,
-    # which breaks the readline loop below and lets us collect partial results.
     def kill_on_timeout():
-        nonlocal timed_out
-        timed_out = True
+        timed_out.set()
         proc.kill()
 
     timer = threading.Timer(timeout, kill_on_timeout)
@@ -278,11 +307,16 @@ def run_trufflehog(repo_path: str, verify: bool = False,
     try:
         for line in proc.stdout:
             line = line.strip()
-            if line:
+            if not line:
+                continue
+            try:
                 finding = json.loads(line)
-                findings.append(finding)
-                if on_finding:
-                    on_finding(finding)  # publish to Redis / save to DB immediately
+            except json.JSONDecodeError:
+                logger.warning("Skipping non-JSON TruffleHog output: %s", line[:200])
+                continue
+            findings.append(finding)
+            if on_finding:
+                on_finding(finding)
 
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
@@ -290,18 +324,23 @@ def run_trufflehog(repo_path: str, verify: bool = False,
     finally:
         timer.cancel()
         proc.stdout.close()
-        proc.stderr.close()
+        # Drain stderr to prevent pipe buffer deadlock; log if non-empty
+        stderr_output = proc.stderr.read() if proc.stderr else ""
+        if stderr_output:
+            logger.warning("TruffleHog stderr: %s", stderr_output[:500])
+        if proc.stderr:
+            proc.stderr.close()
 
-    # Caller uses timed_out to set scan.status = 'partial' vs 'completed'
-    return findings, timed_out
+    return findings, timed_out.is_set()
 ```
 
 **Safety controls:**
 - Max repo size: 500MB (configurable, skip larger repos with warning)
 - Max scan time: 5 minutes per repo (configurable timeout)
 - Concurrent scans: max 3 at a time (Celery concurrency limit)
+- **Task granularity: one Celery task per full scan.** Repos within a scan are processed sequentially inside a single worker. This is simpler than per-repo fan-out (no Celery chord, no cross-task aggregation, straightforward progress tracking). If scan speed becomes a bottleneck after the MVP, per-repo parallelism via `celery.group` is a clear upgrade path.
 - Disk cleanup: `/tmp/scans/` purged after each scan
-- Verification disabled by default for repos the user doesn't own
+- TruffleHog performs live credential verification automatically for all supported detector types. `--only-verified` is never passed — it would hide unverified findings without preventing the underlying API calls. The `Verified` field on each finding reflects TruffleHog's native output.
 
 **Disk cleanup strategy:**
 - Primary: `finally` block in the scan task deletes the clone directory after every scan (success or failure)
@@ -329,30 +368,30 @@ Each finding from TruffleHog is enriched with:
 
 | Condition | Severity | Examples |
 |---|---|---|
-| Verified active by TruffleHog (`--only-verified`) | **Critical** | Any secret confirmed live via API call |
+| `Verified: true` in TruffleHog output (live API call succeeded) | **Critical** | Any secret confirmed active — AWS, Stripe, GitHub tokens, etc. |
 | Known high-value type, unverified | **High** | AWS keys (`AKIA`), Stripe live keys (`sk_live_`), private keys (RSA/SSH/PGP), database connection strings with passwords |
 | Known low-value or test/dev type | **Medium** | Stripe test keys (`sk_test_`), generic API tokens, Firebase keys, Google Maps keys |
 | Low-entropy generic pattern match | **Low** | Generic `password=` assignments, low-confidence regex matches |
 
 Severity is assigned in the enrichment step after TruffleHog returns raw findings. The mapping is driven by TruffleHog's `DetectorType` field combined with the `Verified` boolean.
 
-### Secret Classification (continued)
+Each finding is also enriched with the following fields:
 
 | Field | Source | Description |
 |---|---|---|
 | `location` | TruffleHog output | File path, line number, commit SHA |
 | `timeline` | Git commit metadata | Author, date, commit message |
 | `branch_status` | Git analysis | "Current branch" vs "History only" |
-| `verified` | TruffleHog (if enabled) | Whether the secret is still active |
+| `verified` | TruffleHog JSON output | Whether TruffleHog confirmed the secret live via API call (`true`/`false` — TruffleHog attempts this for all supported detectors by default) |
 | `compliance_mapping` | Redact enrichment | NIST/STIG control IDs violated |
 
 ### Finding Deduplication
 
 TruffleHog can return the same secret from dozens of commits (e.g., a key committed once and present in 50 subsequent commits). Redact deduplicates before storing:
 
-**Dedup key:** `SHA256(SHA256(raw_secret) + file_path + repo_name)`
+**Dedup key:** `SHA256(f"{SHA256(raw_secret)}:{file_path}:{repo_name}")`
 
-- The raw secret is hashed first (never stored in plaintext), then combined with file path and repo name
+- The raw secret is hashed first (never stored in plaintext), then combined with file path and repo name using `:` as a delimiter — colons cannot appear in a SHA256 hex digest, so there's no ambiguity between field boundaries
 - This avoids the collision problem where two different secrets with the same first 4 characters (e.g., two Stripe keys both starting `sk_l`) would incorrectly deduplicate
 - Same secret in same file across multiple commits → **1 finding** with an `occurrences` array
 - Same secret in different files → **separate findings** (different exposure vectors)
@@ -377,7 +416,7 @@ CREATE TABLE scans (
     target_name VARCHAR(255) NOT NULL,
     scan_type VARCHAR(20) NOT NULL,   -- 'quick', 'deep'
     status VARCHAR(20) NOT NULL,      -- 'queued', 'running', 'completed', 'partial', 'failed'
-    repos_total INTEGER DEFAULT 0,    -- total repos to scan (for progress tracking)
+    repos_total INTEGER DEFAULT 0,    -- set by worker after listing repos (0 = still enumerating)
     repos_scanned INTEGER DEFAULT 0,  -- repos completed so far (updated by worker)
     current_repo VARCHAR(255),        -- repo currently being scanned (for progress display)
     started_at TIMESTAMP,
@@ -390,8 +429,8 @@ CREATE INDEX idx_scans_session ON scans(session_id);
 -- Individual findings (deduplicated)
 CREATE TABLE findings (
     id UUID PRIMARY KEY,
-    scan_id UUID REFERENCES scans(id),
-    dedup_hash VARCHAR(64) NOT NULL,       -- SHA256(raw_secret_hash + file_path + repo_name)
+    scan_id UUID REFERENCES scans(id) ON DELETE CASCADE,
+    dedup_hash VARCHAR(64) NOT NULL,       -- SHA256("{raw_secret_hash}:{file_path}:{repo_name}")
     repo_name VARCHAR(255) NOT NULL,
     secret_type VARCHAR(100) NOT NULL,
     severity VARCHAR(20) NOT NULL,         -- 'critical', 'high', 'medium', 'low'
@@ -409,11 +448,27 @@ CREATE TABLE findings (
     first_seen TIMESTAMP,                  -- earliest commit date
     last_seen TIMESTAMP,                   -- latest commit date
     commit_shas JSONB,                     -- array of all commit SHAs where this appears
-    raw_detector_output JSONB,
+    raw_detector_output JSONB,         -- TruffleHog output with Raw/RawV2 fields removed before INSERT (those contain the plaintext secret). ExtraData is retained (e.g., AWS account ID, ARN from verification).
     created_at TIMESTAMP DEFAULT NOW(),
 
     CONSTRAINT uq_findings_dedup UNIQUE (scan_id, dedup_hash)
 );
+
+CREATE INDEX idx_findings_scan_id ON findings(scan_id);
+
+-- Quick scan search hits (GitHub Search API results)
+CREATE TABLE search_hits (
+    id UUID PRIMARY KEY,
+    scan_id UUID REFERENCES scans(id) ON DELETE CASCADE,
+    repo_name VARCHAR(255) NOT NULL,
+    file_path TEXT NOT NULL,
+    matched_pattern VARCHAR(100) NOT NULL,
+    text_fragment TEXT,                    -- surrounding code context with matched value masked (first 4 chars + ████████). The GitHubAdapter must redact before INSERT — the Search API returns the raw matched value in text_matches[].fragment.
+    html_url TEXT,                         -- link to file on GitHub
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_search_hits_scan_id ON search_hits(scan_id);
 
 -- Compliance mappings (seeded at startup)
 CREATE TABLE compliance_mappings (
@@ -426,6 +481,8 @@ CREATE TABLE compliance_mappings (
 );
 ```
 
+> **Seed strategy:** The `compliance_mappings` table is populated via an Alembic data migration (not application startup code). This ensures the data is versioned, repeatable, and applied exactly once. The migration inserts the NIST 800-53 and DISA STIG mappings defined in Section 5. Run `alembic upgrade head` to apply. To update mappings later, create a new migration.
+
 ---
 
 ## 4. Frontend & UI
@@ -435,9 +492,10 @@ CREATE TABLE compliance_mappings (
 #### 1. Landing / New Scan Page
 - Input field: GitHub org name, username, or repo URL
 - Platform selector (GitHub selected by default, GitLab/Bitbucket grayed out with "Coming Soon")
-- Optional: paste a GitHub Personal Access Token for authenticated scanning
+- Optional: paste a GitHub Personal Access Token — shown with tooltip: "Not required. Increases API rate limits from 10 to 30 req/min, enabling org-wide scans. Used for API calls only — never for cloning."
 - "Quick Scan" button (Search API triage)
-- Disclaimer banner: "This tool is for authorized security auditing only"
+- Disclaimer banner: "This tool scans **public repositories only**. Deep scans perform live credential verification automatically. Authorized security auditing use only."
+- If a private repo URL is entered or detected during org listing: inline error `"Private repositories are not supported."` — do not queue the scan
 
 #### 2. Quick Scan Results (Triage View)
 - Card grid showing each repo with hit count
@@ -446,7 +504,7 @@ CREATE TABLE compliance_mappings (
 - Estimated time/size for deep scan
 
 #### 3. Deep Scan Progress
-- Real-time progress bar (WebSocket/SSE)
+- Real-time progress bar (SSE via `EventSource`)
 - Shows: current repo being scanned, repos completed, repos remaining
 - Live feed of findings as they come in
 
@@ -473,8 +531,10 @@ CREATE TABLE compliance_mappings (
 
 #### Stretch — Auto-PR Remediation Panel
 - Available only when the scan target is an individual user account (not an org)
+- Since Redact only scans public repos, the PAT requires `public_repo` scope only — never `repo`
 - Opt-in toggle: "Create PRs to remove discovered secrets" — off by default
-- When enabled, prompts the user to confirm their PAT has `public_repo` (or `repo`) scope
+- When enabled, prompts the user to confirm their PAT has `public_repo` scope
+- Backend enforces `target_type == 'user'` before allowing PR creation — not just a UI restriction
 - Shows a preview of each proposed PR (files changed, lines removed) before submission
 - PR description auto-includes: rotation instructions, history cleanup guidance (BFG/git-filter-repo), and a warning that removing from HEAD does not remove from git history
 - Status tracker showing PR created / merged / closed per finding
@@ -500,7 +560,7 @@ CREATE TABLE compliance_mappings (
 
 ### Key UI/UX Decisions
 - **Never display full secrets** — always redact to first 4 chars + mask
-- **Scan history** — users can revisit past scans without re-running, within the same session. Scan history does not survive session expiry (2 hours). This is a deliberate trade-off: no user accounts means no persistent identity to re-link old scans to. For the demo, this is fine — scans are short-lived. If persistence is needed later, add a simple "scan token" (UUID returned at scan creation) that the user can bookmark to retrieve results without a session.
+- **Scan history** — users can revisit past scans without re-running. Within a session, the dashboard lists all scans for that session. After session expiry, scans are still accessible via their UUID (bookmarkable URL). The frontend stores recent scan UUIDs in `localStorage` so the dashboard can restore them across sessions.
 - **Export everything** — every view should have a "Download as JSON" option
 - **Loading states** — scanning can take minutes; show meaningful progress, not just a spinner
 
@@ -589,8 +649,8 @@ Each discovered secret is framed as a compliance violation against real security
 
 ### Implementation
 
-- HTML template rendered with Jinja2
-- Converted to PDF with WeasyPrint
+- HTML template rendered with Jinja2, converted to PDF with WeasyPrint
+- The backend Dockerfile needs WeasyPrint's system dependencies: `libpango-1.0-0 libcairo2 libgdk-pixbuf2.0-0 libffi-dev shared-mime-info` — add to the `apt-get install` step
 - Styled to look professional (logo, headers, page numbers, table of contents)
 - JSON export option for machine consumption
 
@@ -611,10 +671,10 @@ This section maps every SEC460 module to a concrete deliverable in the Redact pr
   # Database
   DATABASE_URL=postgresql://redact:redact@db:5432/redact
 
-  # Redis (Celery broker + SSE pub/sub)
+  # Redis (Celery broker + SSE pub/sub + server-side session store)
   REDIS_URL=redis://redis:6379/0
 
-  # Session
+  # Session (used to sign the session ID cookie — generate with: openssl rand -hex 32)
   SESSION_SECRET_KEY=change-me-to-a-random-string
 
   # Scanning limits
@@ -645,7 +705,7 @@ Threat model for Redact itself:
 
 | STRIDE Category | Threat | Mitigation |
 |---|---|---|
-| **Spoofing** | Attacker submits scan targeting private repos with stolen token | Token validation, rate limiting, audit logging |
+| **Spoofing** | Attacker submits scan against a target org they don't have authorization to scan | Rate limiting, `SameSite=Strict` session cookie to prevent CSRF-triggered scans, audit log with IP + timestamp |
 | **Tampering** | Scan results modified in transit or at rest | HTTPS everywhere, DB access controls, signed reports |
 | **Repudiation** | User denies initiating a scan of a third-party org | Audit log with timestamps, IP addresses, user identity |
 | **Information Disclosure** | Redact itself leaks the secrets it finds | Redact secrets in UI (first 4 chars only), encrypt DB, purge cloned repos |
@@ -687,7 +747,7 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
   # Tests - Backend + Frontend
@@ -709,20 +769,18 @@ jobs:
   # SAST - Static Application Security Testing
   sast:
     runs-on: ubuntu-latest
-    needs: [test]
     steps:
       - uses: actions/checkout@v4
       - name: Run Bandit (Python SAST)
         run: pip install bandit && bandit -r backend/ -f json -o bandit-report.json
       - name: Run Semgrep
-        uses: returntocorp/semgrep-action@v1
+        uses: semgrep/semgrep-action@v1  # org renamed from returntocorp → semgrep
         with:
           config: p/owasp-top-ten
 
   # SCA - Software Composition Analysis
   sca:
     runs-on: ubuntu-latest
-    needs: [test]
     steps:
       - uses: actions/checkout@v4
       - name: Run pip-audit (Python dependencies)
@@ -733,20 +791,18 @@ jobs:
   # Secret scanning on our own codebase (eating our own dog food)
   secrets:
     runs-on: ubuntu-latest
-    needs: [test]
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Run TruffleHog on our own repo
         run: |
-          docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest \
+          docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:3.82.0 \
             git file:///repo --only-verified --fail
 
   # IaC scanning
   iac:
     runs-on: ubuntu-latest
-    needs: [test]
     steps:
       - uses: actions/checkout@v4
       - name: Run Checkov on Terraform
@@ -757,18 +813,18 @@ jobs:
   # Container image build + scan
   container:
     runs-on: ubuntu-latest
-    needs: [sast, sca, secrets, iac]  # test is transitively required via these jobs
+    needs: [test, sast, sca, secrets, iac]  # all security checks must pass before container build
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker images
         run: docker compose build
       - name: Run Trivy on images
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0  # pin — never use @master
         with:
           image-ref: redact-backend:latest
           severity: CRITICAL,HIGH
       - name: Run Snyk Container
-        uses: snyk/actions/docker@master
+        uses: snyk/actions/docker@0.4.0  # pin — never use @master
         with:
           image: redact-backend:latest
 
@@ -796,7 +852,9 @@ jobs:
     needs: [deploy]
     steps:
       - name: Start Redact
-        run: docker compose up -d && sleep 30
+        run: |
+          docker compose up -d
+          until curl -sf http://localhost:8000/health; do sleep 2; done
       - name: Run OWASP ZAP Baseline
         uses: zaproxy/action-baseline@v0.9.0
         with:
@@ -903,7 +961,7 @@ If the team decides to scan repos they don't own (with professor approval), foll
 ### Before Scanning
 1. Get explicit written approval from the professor
 2. Only scan public repositories
-3. Never enable secret verification (`--only-verified`) on third-party repos
+3. **Understand that deep scans perform live credential verification** — TruffleHog automatically attempts to verify discovered credentials via API calls (e.g., calling AWS, Stripe, GitHub). This happens by default; there is no opt-out. This is ethically acceptable for authorized scans of public repos but means you must have authorization before scanning. Using discovered credentials without authorization may violate the CFAA.
 4. Document everything: what you scanned, when, what you found
 
 ### If You Find Real Secrets
@@ -1044,32 +1102,38 @@ If the live demo breaks (it always can), have:
 
 **Milestone:** Can trigger a scan via API and get JSON results back
 
-### Sprint 3: Frontend & Dashboard (May 12 – May 25)
+### Sprint 3: Frontend Core (May 12 – May 25)
 - [ ] Landing page with scan input
-- [ ] Quick scan results view
-- [ ] Deep scan progress (WebSocket/SSE)
-- [ ] Dashboard: summary cards, timeline chart, repo table
-- [ ] Finding detail view with compliance mapping
+- [ ] Quick scan results view (triage cards)
+- [ ] Deep scan progress (SSE real-time updates)
+- [ ] Dashboard: summary cards, repo breakdown table
 - [ ] Dark mode / Tokyo Night styling
 
-**Milestone:** Full scan-to-dashboard flow works in the browser
+**Milestone:** Can trigger a scan from the browser and see results populate in real-time
 
-### Sprint 4: Reports, Polish & DevSecOps Docs (May 26 – Jun 7)
+### Sprint 4: Dashboard Polish & Reports (May 26 – Jun 1)
+- [ ] Timeline chart (secrets plotted by commit date)
+- [ ] Finding detail view with compliance mapping
+- [ ] Secret type distribution chart
 - [ ] PDF report generation (WeasyPrint + Jinja2 template)
 - [ ] Compliance mapping engine (NIST + STIG)
+
+**Milestone:** Full scan-to-report flow works end-to-end in the browser
+
+### Sprint 5: DevSecOps Docs & Pipeline (Jun 2 – Jun 8)
 - [ ] CI pipeline complete: SAST, SCA, secrets, IaC, container scan, DAST
 - [ ] Terraform configs written + scanned
 - [ ] STRIDE threat model document
 - [ ] Cloud architecture document
 - [ ] Vault/SIEM write-up
 - [ ] Demo org seeded with test repos
-- [ ] Presentation slides
 - [ ] **Stretch:** Auto-PR remediation for individual-user repos (opt-in, requires elevated PAT scope)
 
-**Milestone:** Everything works, demo rehearsed, all documents complete
+**Milestone:** All documents complete, CI pipeline green, demo org ready
 
-### Sprint 5: Buffer & Presentation Prep (Jun 8 – Jun 19)
+### Sprint 6: Buffer & Presentation Prep (Jun 9 – Jun 19)
 - [ ] Bug fixes and polish
+- [ ] Presentation slides
 - [ ] Demo rehearsal (at least 2 dry runs)
 - [ ] Record backup demo video
 - [ ] Final presentation
@@ -1087,6 +1151,8 @@ If the live demo breaks (it always can), have:
 | Platform adapters | Mock GitHub API responses with `respx` or `httpx` mock | Verify `list_repos` returns `Repo` objects, `search_code` handles rate limits |
 | Deduplication | Unit test dedup logic with fixture data | Same secret in 50 commits → 1 finding with 50 occurrences |
 | Compliance mapping | Unit test mapping engine | AWS key → IA-5, SC-12; private key → SC-12, V-222551 |
+| Verification | Assert `--only-verified` never appears in the TruffleHog subprocess command; assert findings with `Verified: true` in TruffleHog JSON output are stored as `verified=True` and `severity='critical'` |
+| Private repo rejection | Unit test that `GitHubAdapter` raises an error when `repo.is_private == True`; assert scan is never queued |
 
 ### Frontend Tests (Vitest)
 
@@ -1121,7 +1187,8 @@ Not aiming for high coverage — this is a 9-week project. Target: key paths tes
 | Professor doesn't approve scanning third-party repos | Medium | Low | Demo with seeded test org only — still impressive |
 | Scope creep (too many features) | High | Medium | Strict MVP: quick scan + deep scan + dashboard + report. Everything else is stretch |
 | Docker Compose issues on different OS | Low | Medium | Document setup, test on Windows (WSL2) + Mac + Linux |
-| Auto-PR creates breaking changes or exposes secrets in PR diff | Low | High | Individual-user repos only (never orgs), require explicit opt-in, preview changes before submission, PR description warns that history still contains the secret |
+| Auto-PR creates breaking changes or exposes secrets in PR diff | Low | High | Public repos + individual-user targets only (enforced server-side), require explicit opt-in, preview changes before submission, PR description warns that history still contains the secret |
+| Deep scan run against unauthorized third-party repos (TruffleHog makes live verification calls by default) | Low | High | Dev environment points only at the seeded demo org; responsible disclosure process documented; authorization requirement stated in the UI disclaimer |
 
 ---
 
@@ -1156,6 +1223,6 @@ Not aiming for high coverage — this is a 9-week project. Target: key paths tes
 - shadcn/ui: https://ui.shadcn.com/
 
 ### Research
-- GitGuardian State of Secrets Sprawl 2026: https://www.gitguardian.com/state-of-secrets-sprawl-report-2025
+- GitGuardian State of Secrets Sprawl 2025: https://www.gitguardian.com/state-of-secrets-sprawl-report-2025
 - GitHub Secret Scanning docs: https://docs.github.com/en/code-security/secret-scanning/about-secret-scanning
 - GitGuardian Responsible Disclosure: https://blog.gitguardian.com/handle-responsible-disclosure/
