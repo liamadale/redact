@@ -1,1 +1,21 @@
 @import "tailwindcss";
+
+@theme {
+  --color-tokyo-bg: #1a1b26;
+  --color-tokyo-bg-highlight: #24283b;
+  --color-tokyo-fg: #c0caf5;
+  --color-tokyo-comment: #565f89;
+  --color-tokyo-border: #3b4261;
+  --color-tokyo-red: #f7768e;
+  --color-tokyo-orange: #ff9e64;
+  --color-tokyo-yellow: #e0af68;
+  --color-tokyo-green: #9ece6a;
+  --color-tokyo-blue: #7aa2f7;
+  --color-tokyo-magenta: #bb9af7;
+  --color-tokyo-cyan: #7dcfff;
+}
+
+body {
+  background-color: var(--color-tokyo-bg);
+  color: var(--color-tokyo-fg);
+}
