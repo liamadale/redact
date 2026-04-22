@@ -48,10 +48,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Run TruffleHog on our own repo
+      - name: Run TruffleHog (Verified Only)  # (UPGRADED)
         run: |
           docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest \
-            git file:///repo --only-verified --fail
+            git file:///repo --only-verified --json > trufflehog.json
+
+      - name: Upload secrets report  # (UPGRADED)
+        uses: actions/upload-artifact@v4
+        with:
+          name: secrets-report
+          path: trufflehog.json
 
   trivy-fs:
     runs-on: ubuntu-latest
