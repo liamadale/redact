@@ -44,20 +44,80 @@ jobs:
 
   secrets:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # (UPGRADED – allow PR comments)
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # ==============================
+      # Run TruffleHog (Verified Only)
+      # ==============================
       - name: Run TruffleHog (Verified Only)  # (UPGRADED)
+        id: trufflehog
         run: |
           docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest \
-            git file:///repo --only-verified --json > trufflehog.json
+            git file:///repo --only-verified --json > trufflehog.json || true
 
+      # ==============================
+      # Count findings
+      # ==============================
+      - name: Install jq  # (REQUIRED)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Count verified secrets  # (IMPROVED)
+        id: count
+        run: |
+          if [ -f trufflehog.json ]; then
+            COUNT=$(jq -s 'length' trufflehog.json)
+          else
+            COUNT=0
+          fi
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+
+      # ==============================
+      # Upload artifact (UPGRADED)
+      # ==============================
       - name: Upload secrets report  # (UPGRADED)
         uses: actions/upload-artifact@v4
         with:
           name: secrets-report
           path: trufflehog.json
+
+      # ==============================
+      # PR Comment (VISIBLE TO TEAM)
+      # ==============================
+      - name: Comment PR with results  # (UPGRADED)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const count = "${{ steps.count.outputs.count }}";
+            const message = count > 0
+              ? `❌ **Security Gate Failed**\n\n🚨 ${count} verified secret(s) detected.\n\nSee artifact: secrets-report`
+              : `✅ **Security Gate Passed**\n\nNo verified secrets found.`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: message
+            });
+
+      # ==============================
+      # 🚨 HARD FAIL (SECURITY GATE)
+      # ==============================
+      - name: Enforce security gate  # (UPGRADED)
+        run: |
+          if [ "${{ steps.count.outputs.count }}" -gt 0 ]; then
+            echo "❌ Verified secrets found. Failing pipeline."
+            exit 1
+          else
+            echo "✅ No verified secrets found."
+          fi
 
   trivy-fs:
     runs-on: ubuntu-latest
