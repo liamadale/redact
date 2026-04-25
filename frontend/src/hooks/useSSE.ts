@@ -9,12 +9,16 @@ export function useSSE(scanId: string | null) {
   const addLog = useScanStore((s) => s.addLog);
   const clearLogs = useScanStore((s) => s.clearLogs);
   const lastFindingsInvalidate = useRef(0);
+  const prevScanId = useRef<string | null>(null);
 
   useEffect(() => {
     if (!scanId) return;
 
-    clearLogs();
-    addLog({ level: "info", prefix: "INIT", message: "connecting to worker stream..." });
+    if (prevScanId.current !== scanId) {
+      clearLogs();
+      addLog({ level: "info", prefix: "INIT", message: "connecting to worker stream..." });
+      prevScanId.current = scanId;
+    }
 
     const es = new EventSource(`/api/scans/${scanId}/stream`);
 
