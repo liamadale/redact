@@ -1111,14 +1111,31 @@ If the live demo breaks (it always can), have:
 
 **Milestone:** Can trigger a scan from the browser and see results populate in real-time
 
-### Sprint 4: Dashboard Polish & Reports (May 26 – Jun 1)
-- [ ] Timeline chart (secrets plotted by commit date)
-- [ ] Finding detail view with compliance mapping
-- [ ] Secret type distribution chart
-- [ ] PDF report generation (WeasyPrint + Jinja2 template)
-- [ ] Compliance mapping engine (NIST + STIG)
+### Sprint 4: Dashboard Polish & Reports (May 26 – Jun 1) ✅
+- [x] Timeline chart (secrets plotted by commit date)
+- [x] Finding detail view with compliance mapping
+- [x] Secret type distribution chart
+- [x] PDF report generation (WeasyPrint + Jinja2 template)
+- [x] Compliance mapping engine (NIST + STIG)
 
-**Milestone:** Full scan-to-report flow works end-to-end in the browser
+**Additional work completed beyond original spec:**
+- [x] NIST AU-2 (Audit Events) control added to compliance seed data
+- [x] Report page: severity and repo filters with filtered PDF/JSON export
+- [x] Report page: collapsible findings preview panel
+- [x] PDF report: auto-generated Table of Contents with page numbers
+- [x] Metrics page: repo severity breakdown, verification pie chart, top committers chart
+- [x] Metrics page: all-time aggregate stats (total scans, repos, findings, avg time-to-detect) for CALMS Measurement
+- [x] `GET /scans` endpoint returning all scans with finding counts
+- [x] `GET /metrics` endpoint returning aggregate stats across all scans
+- [x] Landing page rebuilt as scan history + new scan form (scan cards with severity pills and action links)
+- [x] Dashboard and Metrics rerouted to URL-param based (`/dashboard/:id`, `/metrics/:id`) — no more broken Zustand state
+- [x] Breadcrumb nav with context-aware page links (Scan, Dashboard, Metrics, Report) and status dot
+- [x] SSE log preservation on navigation (logs no longer clear when viewing a finding and returning)
+- [x] ScanView viewport fix (scrollable panels, no page growth)
+- [x] WeasyPrint system dependencies added to backend Dockerfile
+- [x] Celery Beat schedule path fix
+
+**Milestone:** Full scan-to-report flow works end-to-end in the browser ✅
 
 ### Sprint 5: DevSecOps Docs & Pipeline (Jun 2 – Jun 8)
 - [ ] CI pipeline complete: SAST, SCA, secrets, IaC, container scan, DAST
