@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { Dashboard } from "./pages/Dashboard";
 import { FindingDetail } from "./pages/FindingDetail";
 import { Landing } from "./pages/Landing";
+import { Metrics } from "./pages/Metrics";
 import { Report } from "./pages/Report";
 import { ScanView } from "./pages/ScanView";
 
@@ -23,6 +24,12 @@ function Nav() {
         >
           Dashboard
         </Link>
+        <Link
+          to="/metrics"
+          className="text-tokyo-comment hover:text-tokyo-fg text-sm"
+        >
+          Metrics
+        </Link>
       </div>
     </nav>
   );
@@ -40,6 +47,7 @@ function App() {
             <Route path="/scans/:scanId/findings/:findingId" element={<FindingDetail />} />
             <Route path="/scans/:scanId/report" element={<Report />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/metrics" element={<Metrics />} />
           </Routes>
         </div>
       </BrowserRouter>
