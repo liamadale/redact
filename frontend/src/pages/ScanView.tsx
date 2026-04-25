@@ -287,6 +287,7 @@ export function ScanView() {
     queryKey: ["hits", id],
     queryFn: () => api.getHits(id!),
     enabled: !!id && scan?.scan_type === "quick",
+    refetchInterval: scan?.status === "running" ? 3000 : false,
   });
 
   useEffect(() => {
