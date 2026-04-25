@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Redact Security Audit Report — {{ scan.target_name }}</title>
+<style>
+@page {
+  size: letter;
+  margin: 0.9in 0.9in 1in 0.9in;
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 8pt;
+    color: #888;
+  }
+  @bottom-left {
+    content: "REDACT · UNCLASSIFIED · " string(scan-target);
+    font-size: 8pt;
+    color: #888;
+  }
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10pt;
+  color: #1a1b26;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* ── cover ── */
+.cover {
+  break-after: page;
+  padding-top: 1.5in;
+}
+.cover-logo {
+  font-size: 36pt;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: #1a1b26;
+  border-bottom: 4px solid #7aa2f7;
+  display: inline-block;
+  padding-bottom: 4px;
+}
+.cover-subtitle {
+  font-size: 13pt;
+  color: #565f89;
+  margin-top: 6px;
+  margin-bottom: 40px;
+}
+.cover-meta {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 24px;
+  max-width: 480px;
+}
+.meta-row {
+  display: flex;
+  border-bottom: 1px solid #eee;
+  font-size: 10pt;
+}
+.meta-row:last-child { border-bottom: none; }
+.meta-label {
+  width: 130px;
+  padding: 8px 12px;
+  background: #f5f6fa;
+  color: #565f89;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+.meta-value {
+  padding: 8px 12px;
+  color: #1a1b26;
+  word-break: break-all;
+}
+.classification-banner {
+  margin-top: 40px;
+  font-size: 9pt;
+  color: #565f89;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ── section headings ── */
+.section { break-before: page; }
+h2 {
+  font-size: 14pt;
+  color: #1a1b26;
+  border-left: 5px solid #7aa2f7;
+  padding-left: 10px;
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+h3 {
+  font-size: 11pt;
+  color: #1a1b26;
+  margin-top: 20px;
+  margin-bottom: 8px;
+}
+
+/* ── stat cards ── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 16px 0 20px;
+}
+.stat-box {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 12px;
+  text-align: center;
+}
+.stat-number { font-size: 22pt; font-weight: bold; line-height: 1; }
+.stat-label  { font-size: 7.5pt; color: #565f89; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+.num-total    { color: #1a1b26; }
+.num-critical { color: #c0392b; }
+.num-high     { color: #d46428; }
+.num-medium   { color: #a07400; }
+
+/* ── compliance tables ── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+  margin: 12px 0;
+}
+thead th {
+  background: #1a1b26;
+  color: #c0caf5;
+  padding: 7px 10px;
+  text-align: left;
+  font-weight: bold;
+}
+tbody td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #eee;
+  vertical-align: top;
+}
+tbody tr:nth-child(even) td { background: #f9f9f9; }
+.status-fail { color: #c0392b; font-weight: bold; }
+
+/* ── severity badges ── */
+.badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 7.5pt;
+  font-weight: bold;
+  color: white;
+  text-transform: uppercase;
+}
+.badge-critical { background: #c0392b; }
+.badge-high     { background: #d46428; }
+.badge-medium   { background: #a07400; }
+.badge-low      { background: #565f89; }
+.badge-verified { background: #c0392b; margin-left: 6px; }
+
+/* ── finding blocks ── */
+.finding-block {
+  border: 1px solid #ddd;
+  border-left: 4px solid #ccc;
+  border-radius: 2px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  break-inside: avoid;
+}
+.finding-block.critical { border-left-color: #c0392b; }
+.finding-block.high     { border-left-color: #d46428; }
+.finding-block.medium   { border-left-color: #a07400; }
+.finding-block.low      { border-left-color: #565f89; }
+.finding-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.finding-type { font-weight: bold; font-size: 10.5pt; }
+.detail-grid { display: grid; grid-template-columns: 110px 1fr; gap: 3px 8px; font-size: 9pt; margin-bottom: 8px; }
+.detail-label { color: #565f89; }
+.mono { font-family: 'Courier New', Courier, monospace; font-size: 8.5pt; background: #f5f5f5; padding: 1px 4px; border-radius: 2px; }
+.controls-section { margin-top: 8px; border-top: 1px solid #eee; padding-top: 8px; font-size: 8.5pt; }
+.controls-label { color: #565f89; font-weight: bold; margin-bottom: 4px; }
+.control-item { padding: 2px 0; color: #1a1b26; }
+.control-id { font-weight: bold; }
+
+/* ── remediation ── */
+.remediation-block {
+  background: #f0f6ff;
+  border: 1px solid #c5dcf5;
+  border-radius: 4px;
+  padding: 14px 16px;
+  margin: 12px 0;
+  font-size: 9.5pt;
+}
+.remediation-block p { margin: 0 0 10px; }
+.remediation-block p:last-child { margin-bottom: 0; }
+.priority-label { font-weight: bold; display: block; margin-bottom: 2px; }
+code {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 8.5pt;
+  background: #e8eaf6;
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+</style>
+</head>
+<body>
+
+{# Cover page #}
+<div class="cover">
+  <div class="cover-logo">REDACT</div>
+  <div class="cover-subtitle">Security Audit Report</div>
+
+  <div class="cover-meta">
+    <div class="meta-row">
+      <span class="meta-label">Target</span>
+      <span class="meta-value">{{ scan.target_name }}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">Platform</span>
+      <span class="meta-value">{{ scan.platform | capitalize }}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">Scan Type</span>
+      <span class="meta-value">{{ scan.scan_type | capitalize }} Scan (Full History)</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">Date</span>
+      <span class="meta-value">
+        {%- if scan.completed_at -%}{{ scan.completed_at.strftime('%Y-%m-%d') }}{%- else -%}In Progress{%- endif -%}
+      </span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">Scan ID</span>
+      <span class="meta-value mono">{{ scan.id }}</span>
+    </div>
+    <div class="meta-row">
+      <span class="meta-label">Status</span>
+      <span class="meta-value">{{ scan.status | upper }}</span>
+    </div>
+  </div>
+
+  <div class="classification-banner">Classification: UNCLASSIFIED</div>
+</div>
+
+{# Executive Summary #}
+<div class="section">
+  <h2>Executive Summary</h2>
+
+  <div class="stat-grid">
+    <div class="stat-box">
+      <div class="stat-number num-total">{{ total_findings }}</div>
+      <div class="stat-label">Total Findings</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-number num-critical">{{ severity_counts.critical }}</div>
+      <div class="stat-label">Critical</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-number num-high">{{ severity_counts.high }}</div>
+      <div class="stat-label">High</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-number num-medium">{{ severity_counts.medium + severity_counts.low }}</div>
+      <div class="stat-label">Medium / Low</div>
+    </div>
+  </div>
+
+  <p>
+    This report presents the findings of a Redact security audit targeting
+    <strong>{{ scan.target_name }}</strong>.
+    The scan examined full git history across all branches for exposed credentials,
+    API keys, and private cryptographic keys using TruffleHog with live credential
+    verification enabled.
+  </p>
+
+  {% if severity_counts.critical > 0 %}
+  <p>
+    <strong>⚠ IMMEDIATE ACTION REQUIRED:</strong>
+    {{ severity_counts.critical }} finding(s) were confirmed as active credentials
+    via live API verification. These must be rotated before any other remediation step.
+  </p>
+  {% endif %}
+
+  {% if nist_controls %}
+  <p>
+    <strong>{{ nist_controls | length }}</strong> NIST 800-53 control(s) and
+    <strong>{{ stig_controls | length }}</strong> DISA STIG finding(s) were triggered
+    by the discovered secrets.
+  </p>
+  {% endif %}
+</div>
+
+{# Compliance Summary #}
+<div class="section">
+  <h2>Compliance Summary</h2>
+
+  {% if nist_controls %}
+  <h3>NIST 800-53 Controls Violated</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:80px;">Control ID</th>
+        <th>Control Name</th>
+        <th style="width:60px;">Status</th>
+        <th style="width:70px;">Findings</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in nist_controls %}
+      <tr>
+        <td><strong>{{ c.control_id }}</strong></td>
+        <td>{{ c.control_title }}</td>
+        <td class="status-fail">FAIL</td>
+        <td>{{ c.finding_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if stig_controls %}
+  <h3>DISA STIG Application Security Findings</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:90px;">STIG ID</th>
+        <th>Title</th>
+        <th style="width:60px;">Status</th>
+        <th style="width:70px;">Findings</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in stig_controls %}
+      <tr>
+        <td><strong>{{ c.control_id }}</strong></td>
+        <td>{{ c.control_title }}</td>
+        <td class="status-fail">FAIL</td>
+        <td>{{ c.finding_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if not nist_controls and not stig_controls %}
+  <p style="color:#565f89;">No compliance violations detected.</p>
+  {% endif %}
+</div>
+
+{# Detailed Findings #}
+<div class="section">
+  <h2>Detailed Findings</h2>
+
+  {% if not findings %}
+  <p style="color:#565f89;">No findings were recorded for this scan.</p>
+  {% endif %}
+
+  {% for item in findings %}
+  {% set f = item.finding %}
+  <div class="finding-block {{ f.severity }}">
+    <div class="finding-header">
+      <span class="badge badge-{{ f.severity }}">{{ f.severity }}</span>
+      <span class="finding-type">{{ f.secret_type }}</span>
+      {% if f.verified %}
+      <span class="badge badge-verified">Verified Active</span>
+      {% endif %}
+    </div>
+
+    <div class="detail-grid">
+      <span class="detail-label">Repository</span>
+      <span>{{ f.repo_name }}</span>
+
+      <span class="detail-label">File</span>
+      <span class="mono">{{ f.file_path }}{% if f.line_number %}:{{ f.line_number }}{% endif %}</span>
+
+      {% if f.commit_sha %}
+      <span class="detail-label">Commit</span>
+      <span class="mono">{{ f.commit_sha[:8] }}{% if f.commit_date %} &nbsp;({{ f.commit_date.strftime('%Y-%m-%d') }}){% endif %}</span>
+      {% endif %}
+
+      {% if f.commit_author %}
+      <span class="detail-label">Author</span>
+      <span>{{ f.commit_author }}</span>
+      {% endif %}
+
+      {% if f.branch_status %}
+      <span class="detail-label">Branch Status</span>
+      <span>{{ f.branch_status }}</span>
+      {% endif %}
+
+      {% if f.redacted_secret %}
+      <span class="detail-label">Secret (redacted)</span>
+      <span class="mono">{{ f.redacted_secret }}</span>
+      {% endif %}
+
+      {% if f.occurrence_count and f.occurrence_count > 1 %}
+      <span class="detail-label">Occurrences</span>
+      <span>Found in {{ f.occurrence_count }} commits</span>
+      {% endif %}
+    </div>
+
+    {% if item.controls %}
+    <div class="controls-section">
+      <div class="controls-label">Controls Violated</div>
+      {% for c in item.controls %}
+      <div class="control-item">
+        &bull; <span class="control-id">{{ c.control_id }}</span>
+        <span style="color:#565f89;">({{ c.framework }})</span>
+        — {{ c.control_title }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+{# Remediation Roadmap #}
+<div class="section">
+  <h2>Remediation Roadmap</h2>
+
+  <div class="remediation-block">
+    <p>
+      <span class="priority-label">Priority 1 — Rotate all verified-active credentials immediately</span>
+      Any finding marked <strong>Verified Active</strong> represents a live, exploitable credential.
+      Rotate it in the relevant service console (AWS IAM, Stripe dashboard, GitHub developer settings)
+      before taking any other action.
+    </p>
+    <p>
+      <span class="priority-label">Priority 2 — Remove secrets from the current branch</span>
+      Delete the secret from the file and commit the change. This prevents future exposure but does
+      not remove it from git history.
+    </p>
+    <p>
+      <span class="priority-label">Priority 3 — Clean git history</span>
+      Use BFG Repo-Cleaner (<code>java -jar bfg.jar --replace-text secrets.txt</code>) or
+      <code>git filter-repo --replace-text secrets.txt</code> to purge the secret from all commits.
+      Force-push the cleaned history and notify all collaborators to re-clone.
+    </p>
+    <p>
+      <span class="priority-label">Priority 4 — Implement preventive controls</span>
+      Install a pre-commit secret scanner (TruffleHog or GitLeaks) to catch secrets before they are
+      committed. Store all credentials in environment variables or a dedicated secrets manager
+      (AWS Secrets Manager, HashiCorp Vault, or similar).
+    </p>
+  </div>
+
+  <h3>Appendix: Methodology &amp; Tool Versions</h3>
+  <p>
+    Scan performed by <strong>Redact</strong> using TruffleHog as the scanning backend.
+    TruffleHog scans full git history across all branches (<code>--all-branches</code>) and
+    performs live credential verification for all supported detector types.
+    Findings with <em>Verified: true</em> were confirmed active via live API calls at the time of scan.
+    The <code>--only-verified</code> flag was not used — all findings (verified and unverified) are included.
+  </p>
+  <p>
+    Compliance mappings reference NIST SP 800-53 Rev 5 and the DISA Application Security and
+    Development STIG. Control applicability is determined by secret type as detected by TruffleHog.
+  </p>
+</div>
+
+</body>
+</html>

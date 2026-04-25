@@ -85,3 +85,16 @@ class FindingResponse(BaseModel):
 class FindingsListResponse(BaseModel):
     findings: list[FindingResponse]
     total: int
+
+
+class ComplianceMappingResponse(BaseModel):
+    framework: str
+    control_id: str
+    control_title: str
+    description: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class FindingDetailResponse(FindingResponse):
+    compliance_controls: list[ComplianceMappingResponse] = []

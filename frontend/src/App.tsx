@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
-import { Landing } from "./pages/Landing";
-import { ScanView } from "./pages/ScanView";
 import { Dashboard } from "./pages/Dashboard";
+import { FindingDetail } from "./pages/FindingDetail";
+import { Landing } from "./pages/Landing";
+import { Report } from "./pages/Report";
+import { ScanView } from "./pages/ScanView";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000 } },
@@ -35,6 +37,8 @@ function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/scans/:id" element={<ScanView />} />
+            <Route path="/scans/:scanId/findings/:findingId" element={<FindingDetail />} />
+            <Route path="/scans/:scanId/report" element={<Report />} />
             <Route path="/dashboard" element={<Dashboard />} />
           </Routes>
         </div>

@@ -1,7 +1,7 @@
-import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { Link, useParams } from "react-router-dom";
 import { useSSE } from "../hooks/useSSE";
+import { api } from "../lib/api";
 import type { Scan } from "../lib/types";
 
 function ProgressBar({ scan }: { scan: Scan }) {
@@ -123,27 +123,25 @@ export function ScanView() {
             Findings ({findings.total})
           </h2>
           {findings.findings.map((f) => (
-            <div
+            <Link
               key={f.id}
-              className="p-4 bg-tokyo-bg-highlight border border-tokyo-border rounded-lg"
+              to={`/scans/${id}/findings/${f.id}`}
+              className="block p-4 bg-tokyo-bg-highlight border border-tokyo-border rounded-lg hover:border-tokyo-blue transition-colors"
             >
               <div className="flex items-center gap-2 mb-1">
                 <SeverityBadge severity={f.severity} />
-                <span className="text-tokyo-fg font-medium">
-                  {f.secret_type}
-                </span>
+                <span className="text-tokyo-fg font-medium">{f.secret_type}</span>
                 {f.verified && (
                   <span className="text-tokyo-red text-xs">● verified</span>
                 )}
+                <span className="ml-auto text-tokyo-comment text-xs">View details →</span>
               </div>
               <p className="text-tokyo-comment text-sm">
                 {f.repo_name} · {f.file_path}
                 {f.line_number ? `:${f.line_number}` : ""}
               </p>
-              <p className="text-tokyo-fg font-mono text-sm mt-1">
-                {f.redacted_secret}
-              </p>
-            </div>
+              <p className="text-tokyo-fg font-mono text-sm mt-1">{f.redacted_secret}</p>
+            </Link>
           ))}
         </div>
       )}

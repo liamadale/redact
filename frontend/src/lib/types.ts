@@ -60,3 +60,14 @@ export interface HitsResponse {
   hits: SearchHit[];
   total: number;
 }
+
+export interface ComplianceControl {
+  framework: string;
+  control_id: string;
+  control_title: string;
+  description: string | null;
+}
+
+export interface FindingDetail extends Finding {
+  compliance_controls: ComplianceControl[];
+}
