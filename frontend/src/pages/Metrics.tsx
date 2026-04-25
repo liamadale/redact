@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   Bar,
   BarChart,
@@ -15,7 +15,6 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../lib/api";
-import { useScanStore } from "../stores/scanStore";
 import type { Finding } from "../lib/types";
 
 const SEV_COLORS: Record<string, string> = {
@@ -80,7 +79,7 @@ function buildAuthorData(findings: Finding[]) {
 }
 
 export function Metrics() {
-  const scanId = useScanStore((s) => s.currentScanId);
+  const { id: scanId } = useParams<{ id: string }>();
 
   const { data: scan } = useQuery({
     queryKey: ["scan", scanId],
@@ -92,6 +91,11 @@ export function Metrics() {
     queryKey: ["findings", scanId, "metrics"],
     queryFn: () => api.getFindings(scanId!, 0, 200),
     enabled: !!scanId,
+  });
+
+  const { data: aggregate } = useQuery({
+    queryKey: ["aggregate-metrics"],
+    queryFn: () => api.getMetrics(),
   });
 
   if (!scanId || !scan) {
@@ -118,6 +122,16 @@ export function Metrics() {
   const uniqueRepos = new Set(allFindings.map((f) => f.repo_name)).size;
   const avgPerRepo = uniqueRepos > 0 ? (allFindings.length / uniqueRepos).toFixed(1) : "0";
 
+  const formatTtd = (seconds: number | null | undefined) => {
+    if (!seconds) return "—";
+    const days = Math.floor(seconds / 86400);
+    if (days > 365) return `${(days / 365).toFixed(1)}y`;
+    if (days > 0) return `${days}d`;
+    const hours = Math.floor(seconds / 3600);
+    if (hours > 0) return `${hours}h`;
+    return `${Math.floor(seconds / 60)}m`;
+  };
+
   return (
     <div className="min-h-screen p-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -127,11 +141,40 @@ export function Metrics() {
             {scan.target_name} · {allFindings.length} findings across {uniqueRepos} repos
           </p>
         </div>
-        <div className="flex gap-3 text-sm">
-          <Link to="/dashboard" className="text-tokyo-comment hover:text-tokyo-fg">Dashboard</Link>
-          <Link to={`/scans/${scanId}`} className="text-tokyo-blue hover:underline">Scan →</Link>
-        </div>
       </div>
+
+      {/* All-time aggregate stats */}
+      {aggregate && (
+        <div className="mb-8">
+          <h2 className="text-xs font-mono font-bold text-tokyo-comment uppercase tracking-widest mb-3">
+            All-Time · CALMS Measurement
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="p-3 bg-tokyo-bg-highlight border border-tokyo-border rounded-lg">
+              <p className="text-tokyo-comment text-xs">Total Scans</p>
+              <p className="text-xl font-bold text-tokyo-fg">{aggregate.total_scans}</p>
+            </div>
+            <div className="p-3 bg-tokyo-bg-highlight border border-tokyo-border rounded-lg">
+              <p className="text-tokyo-comment text-xs">Repos Scanned</p>
+              <p className="text-xl font-bold text-tokyo-fg">{aggregate.total_repos_scanned}</p>
+            </div>
+            <div className="p-3 bg-tokyo-bg-highlight border border-tokyo-border rounded-lg">
+              <p className="text-tokyo-comment text-xs">Secrets Found</p>
+              <p className="text-xl font-bold text-tokyo-red">{aggregate.total_findings}</p>
+            </div>
+            <div className="p-3 bg-tokyo-bg-highlight border border-tokyo-border rounded-lg">
+              <p className="text-tokyo-comment text-xs">Avg Time-to-Detect</p>
+              <p className="text-xl font-bold text-tokyo-yellow">{formatTtd(aggregate.avg_time_to_detect_seconds)}</p>
+              <p className="text-tokyo-comment text-[9px] font-mono">commit → scan</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Per-scan stats */}
+      <h2 className="text-xs font-mono font-bold text-tokyo-comment uppercase tracking-widest mb-3">
+        This Scan
+      </h2>
 
       {/* Top-level stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">

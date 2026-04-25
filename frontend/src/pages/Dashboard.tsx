@@ -1,9 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { SecretTypeChart } from "../components/SecretTypeChart";
 import { TimelineChart } from "../components/TimelineChart";
 import { api } from "../lib/api";
-import { useScanStore } from "../stores/scanStore";
 
 function StatCard({
   label,
@@ -23,7 +22,7 @@ function StatCard({
 }
 
 export function Dashboard() {
-  const scanId = useScanStore((s) => s.currentScanId);
+  const { id: scanId } = useParams<{ id: string }>();
 
   const { data: scan } = useQuery({
     queryKey: ["scan", scanId],
@@ -33,7 +32,7 @@ export function Dashboard() {
 
   const { data: findings } = useQuery({
     queryKey: ["findings", scanId],
-    queryFn: () => api.getFindings(scanId!, 0, 500),
+    queryFn: () => api.getFindings(scanId!, 0, 200),
     enabled: !!scanId && scan?.scan_type === "deep" && scan?.status !== "queued",
   });
 
@@ -69,19 +68,9 @@ export function Dashboard() {
   return (
     <div className="min-h-screen p-8 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-tokyo-fg">Dashboard</h1>
-        <div className="flex items-center gap-4 text-sm">
-          <Link to={`/scans/${scanId}`} className="text-tokyo-blue hover:underline">
-            Scan details →
-          </Link>
-          {scan.scan_type === "deep" && (
-            <Link
-              to={`/scans/${scanId}/report`}
-              className="px-3 py-1.5 bg-tokyo-blue text-tokyo-bg rounded font-medium hover:opacity-90"
-            >
-              Generate Report
-            </Link>
-          )}
+        <div>
+          <h1 className="text-2xl font-bold text-tokyo-fg">Dashboard</h1>
+          <p className="text-tokyo-comment text-sm mt-1">{scan.target_name} · {scan.scan_type} scan</p>
         </div>
       </div>
 
