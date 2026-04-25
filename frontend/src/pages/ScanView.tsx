@@ -320,7 +320,7 @@ export function ScanView() {
   const errorCount   = logs.filter((l) => l.level === "error").length;
 
   return (
-    <div className="min-h-screen flex flex-col bg-tokyo-bg">
+    <div className="h-screen flex flex-col bg-tokyo-bg overflow-hidden">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="border-b border-tokyo-border bg-tokyo-bg-highlight/50 px-6 py-4 shrink-0">
