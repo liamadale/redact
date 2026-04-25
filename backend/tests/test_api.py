@@ -1,5 +1,5 @@
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from app.models.models import Finding
 
@@ -10,8 +10,9 @@ def test_health(client):
     assert resp.json() == {"status": "ok"}
 
 
+@patch("app.main.store_token")
 @patch("app.main.task_quick_scan")
-def test_create_quick_scan(mock_task, client):
+def test_create_quick_scan(mock_task, mock_store, client):
     mock_task.delay = lambda *a, **kw: None
     resp = client.post(
         "/scans",
@@ -29,26 +30,16 @@ def test_create_quick_scan(mock_task, client):
     assert data["platform"] == "github"
 
 
-@patch("app.adapters.github.GitHubAdapter")
+@patch("app.main.store_token")
 @patch("app.main.task_deep_scan")
-def test_create_deep_scan(mock_task, mock_adapter_cls, client):
-    from app.adapters.base import Repo
+def test_create_deep_scan(mock_task, mock_store, client):
+    """Deep scan for org no longer calls GitHub API in route — just queues task."""
+    called_args = {}
 
-    mock_task.delay = lambda *a, **kw: None
-    mock_adapter = AsyncMock()
-    mock_adapter.list_repos.return_value = [
-        Repo(
-            name="repo1",
-            full_name="test-org/repo1",
-            clone_url="https://github.com/test-org/repo1.git",
-            default_branch="main",
-            size_kb=100,
-            is_private=False,
-            last_pushed_at="2026-01-01T00:00:00Z",
-        )
-    ]
-    mock_adapter_cls.return_value = mock_adapter
+    def capture_delay(*args, **kwargs):
+        called_args["args"] = args
 
+    mock_task.delay = capture_delay
     resp = client.post(
         "/scans",
         json={
@@ -59,10 +50,75 @@ def test_create_deep_scan(mock_task, mock_adapter_cls, client):
     )
     assert resp.status_code == 201
     assert resp.json()["scan_type"] == "deep"
+    # Verify task receives (scan_id, target_name, target_type, session_id)
+    args = called_args["args"]
+    assert args[1] == "test-org"
+    assert args[2] == "org"
+    assert len(args[3]) == 64  # SHA256 session_id
 
 
+@patch("app.main.store_token")
+@patch("app.main.task_deep_scan")
+def test_create_deep_scan_repo(mock_task, mock_store, client):
+    """Deep scan for single repo passes target_type='repo'."""
+    called_args = {}
+    mock_task.delay = lambda *a, **kw: called_args.update(args=a)
+    resp = client.post(
+        "/scans",
+        json={
+            "target_type": "repo",
+            "target_name": "owner/repo",
+            "scan_type": "deep",
+        },
+    )
+    assert resp.status_code == 201
+    assert called_args["args"][2] == "repo"
+
+
+@patch("app.main.store_token")
 @patch("app.main.task_quick_scan")
-def test_get_scan(mock_task, client):
+def test_token_not_in_celery_args(mock_task, mock_store, client):
+    """Token must never be serialized into Celery task arguments."""
+    called_args = {}
+    mock_task.delay = lambda *a, **kw: called_args.update(args=a)
+    resp = client.post(
+        "/scans",
+        json={
+            "target_type": "org",
+            "target_name": "test-org",
+            "scan_type": "quick",
+            "token": "ghp_supersecrettoken123",
+        },
+    )
+    assert resp.status_code == 201
+    # Args should be (scan_id, target, session_id) — no token
+    args = called_args["args"]
+    for arg in args:
+        assert "ghp_supersecrettoken123" not in str(arg)
+
+
+@patch("app.main.store_token")
+@patch("app.main.task_quick_scan")
+def test_token_stored_in_session(mock_task, mock_store, client):
+    """Token should be stored via store_token when provided."""
+    mock_task.delay = lambda *a, **kw: None
+    client.post(
+        "/scans",
+        json={
+            "target_type": "org",
+            "target_name": "test-org",
+            "scan_type": "quick",
+            "token": "ghp_testtoken",
+        },
+    )
+    mock_store.assert_called_once()
+    _, token = mock_store.call_args[0]
+    assert token == "ghp_testtoken"
+
+
+@patch("app.main.store_token")
+@patch("app.main.task_quick_scan")
+def test_get_scan(mock_task, mock_store, client):
     mock_task.delay = lambda *a, **kw: None
     resp = client.post(
         "/scans",
@@ -85,8 +141,9 @@ def test_get_scan_not_found(client):
     assert resp.status_code == 404
 
 
+@patch("app.main.store_token")
 @patch("app.main.task_quick_scan")
-def test_get_findings_empty(mock_task, client):
+def test_get_findings_empty(mock_task, mock_store, client):
     mock_task.delay = lambda *a, **kw: None
     resp = client.post(
         "/scans",
@@ -105,8 +162,9 @@ def test_get_findings_empty(mock_task, client):
     assert data["total"] == 0
 
 
+@patch("app.main.store_token")
 @patch("app.main.task_quick_scan")
-def test_get_findings_with_data(mock_task, client, db):
+def test_get_findings_with_data(mock_task, mock_store, client, db):
     mock_task.delay = lambda *a, **kw: None
     resp = client.post(
         "/scans",
@@ -118,7 +176,6 @@ def test_get_findings_with_data(mock_task, client, db):
     )
     scan_id = resp.json()["id"]
 
-    # Insert a finding directly
     finding = Finding(
         id=uuid.uuid4(),
         scan_id=uuid.UUID(scan_id),
@@ -143,6 +200,9 @@ def test_get_findings_with_data(mock_task, client, db):
     assert data["findings"][0]["severity"] == "critical"
 
 
+# --- Input validation tests ---
+
+
 def test_invalid_scan_type(client):
     resp = client.post(
         "/scans",
@@ -152,4 +212,66 @@ def test_invalid_scan_type(client):
             "scan_type": "invalid",
         },
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 422
+
+
+def test_invalid_target_type(client):
+    resp = client.post(
+        "/scans",
+        json={
+            "target_type": "invalid",
+            "target_name": "test-org",
+            "scan_type": "quick",
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_invalid_target_name_special_chars(client):
+    resp = client.post(
+        "/scans",
+        json={
+            "target_type": "org",
+            "target_name": "test org; rm -rf /",
+            "scan_type": "quick",
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_invalid_repo_format(client):
+    resp = client.post(
+        "/scans",
+        json={
+            "target_type": "repo",
+            "target_name": "no-slash-here",
+            "scan_type": "deep",
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_valid_repo_format(client):
+    with patch("app.main.store_token"), patch("app.main.task_deep_scan") as mock_task:
+        mock_task.delay = lambda *a, **kw: None
+        resp = client.post(
+            "/scans",
+            json={
+                "target_type": "repo",
+                "target_name": "owner/my-repo.js",
+                "scan_type": "deep",
+            },
+        )
+        assert resp.status_code == 201
+
+
+def test_empty_target_name(client):
+    resp = client.post(
+        "/scans",
+        json={
+            "target_type": "org",
+            "target_name": "   ",
+            "scan_type": "quick",
+        },
+    )
+    assert resp.status_code == 422
