@@ -18,7 +18,9 @@ from app.schemas.scans import (
     FindingResponse,
     FindingsListResponse,
     ScanCreate,
+    ScanListResponse,
     ScanResponse,
+    ScanSummaryResponse,
 )
 from app.session import store_token
 from app.worker import task_deep_scan, task_quick_scan
@@ -37,6 +39,66 @@ def get_db():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+async def get_metrics(db: Session = Depends(get_db)):
+    from sqlalchemy import func as sa_func  # noqa: PLC0415
+
+    scan_stats = db.query(
+        sa_func.count(Scan.id).label("total_scans"),
+        sa_func.coalesce(sa_func.sum(Scan.repos_scanned), 0).label("total_repos"),
+    ).first()
+
+    finding_stats = db.query(sa_func.count(Finding.id)).scalar() or 0
+
+    avg_ttd_row = db.query(
+        sa_func.avg(
+            sa_func.extract("epoch", Finding.created_at) - sa_func.extract("epoch", Finding.commit_date)
+        )
+    ).filter(Finding.commit_date.isnot(None)).first()
+
+    avg_ttd_seconds = avg_ttd_row[0] if avg_ttd_row and avg_ttd_row[0] else None
+
+    return {
+        "total_scans": scan_stats[0] if scan_stats else 0,
+        "total_repos_scanned": scan_stats[1] if scan_stats else 0,
+        "total_findings": finding_stats,
+        "avg_time_to_detect_seconds": round(avg_ttd_seconds) if avg_ttd_seconds else None,
+    }
+
+
+@app.get("/scans", response_model=ScanListResponse)
+async def list_scans(db: Session = Depends(get_db)):
+    from sqlalchemy import case, func as sa_func  # noqa: PLC0415
+
+    counts = (
+        db.query(
+            Finding.scan_id,
+            sa_func.count().label("findings_total"),
+            sa_func.sum(case((Finding.severity == "critical", 1), else_=0)).label("findings_critical"),
+            sa_func.sum(case((Finding.severity == "high", 1), else_=0)).label("findings_high"),
+        )
+        .group_by(Finding.scan_id)
+        .subquery()
+    )
+
+    rows = (
+        db.query(Scan, counts.c.findings_total, counts.c.findings_critical, counts.c.findings_high)
+        .outerjoin(counts, Scan.id == counts.c.scan_id)
+        .order_by(Scan.created_at.desc())
+        .all()
+    )
+
+    scans = []
+    for scan, total, critical, high in rows:
+        d = ScanSummaryResponse.model_validate(scan)
+        d.findings_total = total or 0
+        d.findings_critical = critical or 0
+        d.findings_high = high or 0
+        scans.append(d)
+
+    return ScanListResponse(scans=scans)
 
 
 @app.post("/scans", response_model=ScanResponse, status_code=201)
