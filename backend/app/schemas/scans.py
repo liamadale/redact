@@ -98,3 +98,25 @@ class ComplianceMappingResponse(BaseModel):
 
 class FindingDetailResponse(FindingResponse):
     compliance_controls: list[ComplianceMappingResponse] = []
+
+
+class ScanSummaryResponse(BaseModel):
+    id: uuid.UUID
+    platform: str
+    target_type: str
+    target_name: str
+    scan_type: str
+    status: str
+    repos_total: int
+    repos_scanned: int
+    created_at: datetime | None
+    completed_at: datetime | None
+    findings_total: int = 0
+    findings_critical: int = 0
+    findings_high: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class ScanListResponse(BaseModel):
+    scans: list[ScanSummaryResponse]

@@ -320,7 +320,7 @@ export function ScanView() {
   const errorCount   = logs.filter((l) => l.level === "error").length;
 
   return (
-    <div className="h-screen flex flex-col bg-tokyo-bg overflow-hidden">
+    <div className="h-[calc(100vh-3.5rem)] flex flex-col bg-tokyo-bg overflow-hidden">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="border-b border-tokyo-border bg-tokyo-bg-highlight/50 px-6 py-4 shrink-0">
@@ -355,28 +355,6 @@ export function ScanView() {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {isDone && scan.scan_type === "deep" && (
-                <>
-                  <Link
-                    to="/dashboard"
-                    className="px-3 py-1.5 text-[11px] border border-tokyo-border text-tokyo-comment hover:text-tokyo-fg hover:border-tokyo-fg/40 rounded transition-colors font-mono"
-                  >
-                    Dashboard
-                  </Link>
-                  <Link
-                    to={`/scans/${id}/report`}
-                    className="px-3 py-1.5 text-[11px] bg-tokyo-blue text-tokyo-bg font-bold rounded hover:opacity-90 transition-opacity font-mono"
-                  >
-                    PDF Report
-                  </Link>
-                </>
-              )}
-              <Link
-                to="/"
-                className="px-3 py-1.5 text-[11px] border border-tokyo-border text-tokyo-comment hover:text-tokyo-fg rounded transition-colors font-mono"
-              >
-                + New Scan
-              </Link>
             </div>
           </div>
 

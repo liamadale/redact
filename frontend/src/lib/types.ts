@@ -51,6 +51,33 @@ export interface ScanCreate {
   token?: string;
 }
 
+export interface ScanSummary {
+  id: string;
+  platform: string;
+  target_type: string;
+  target_name: string;
+  scan_type: "quick" | "deep";
+  status: "queued" | "running" | "completed" | "partial" | "failed";
+  repos_total: number;
+  repos_scanned: number;
+  created_at: string | null;
+  completed_at: string | null;
+  findings_total: number;
+  findings_critical: number;
+  findings_high: number;
+}
+
+export interface ScanListResponse {
+  scans: ScanSummary[];
+}
+
+export interface AggregateMetrics {
+  total_scans: number;
+  total_repos_scanned: number;
+  total_findings: number;
+  avg_time_to_detect_seconds: number | null;
+}
+
 export interface FindingsResponse {
   findings: Finding[];
   total: number;

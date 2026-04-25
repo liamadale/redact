@@ -81,6 +81,40 @@ body {
   letter-spacing: 0.08em;
 }
 
+/* ── table of contents ── */
+.toc { break-after: page; }
+.toc-title {
+  font-size: 14pt;
+  font-weight: bold;
+  color: #1a1b26;
+  border-left: 5px solid #7aa2f7;
+  padding-left: 10px;
+  margin-bottom: 20px;
+}
+.toc-entry {
+  display: flex;
+  align-items: baseline;
+  padding: 5px 0;
+  font-size: 10.5pt;
+}
+.toc-entry a {
+  color: #1a1b26;
+  text-decoration: none;
+}
+.toc-dots {
+  flex: 1;
+  border-bottom: 1px dotted #ccc;
+  margin: 0 6px;
+  min-width: 20px;
+}
+.toc-page {
+  color: #565f89;
+  font-size: 9.5pt;
+}
+.toc-page::after {
+  content: target-counter(attr(href), page);
+}
+
 /* ── section headings ── */
 .section { break-before: page; }
 h2 {
@@ -244,8 +278,33 @@ code {
   <div class="classification-banner">Classification: UNCLASSIFIED</div>
 </div>
 
+{# Table of Contents #}
+<div class="toc">
+  <div class="toc-title">Table of Contents</div>
+  <div class="toc-entry">
+    <a href="#executive-summary">Executive Summary</a>
+    <span class="toc-dots"></span>
+    <a class="toc-page" href="#executive-summary"></a>
+  </div>
+  <div class="toc-entry">
+    <a href="#compliance-summary">Compliance Summary</a>
+    <span class="toc-dots"></span>
+    <a class="toc-page" href="#compliance-summary"></a>
+  </div>
+  <div class="toc-entry">
+    <a href="#detailed-findings">Detailed Findings ({{ total_findings }})</a>
+    <span class="toc-dots"></span>
+    <a class="toc-page" href="#detailed-findings"></a>
+  </div>
+  <div class="toc-entry">
+    <a href="#remediation-roadmap">Remediation Roadmap</a>
+    <span class="toc-dots"></span>
+    <a class="toc-page" href="#remediation-roadmap"></a>
+  </div>
+</div>
+
 {# Executive Summary #}
-<div class="section">
+<div class="section" id="executive-summary">
   <h2>Executive Summary</h2>
 
   <div class="stat-grid">
@@ -293,7 +352,7 @@ code {
 </div>
 
 {# Compliance Summary #}
-<div class="section">
+<div class="section" id="compliance-summary">
   <h2>Compliance Summary</h2>
 
   {% if nist_controls %}
@@ -350,7 +409,7 @@ code {
 </div>
 
 {# Detailed Findings #}
-<div class="section">
+<div class="section" id="detailed-findings">
   <h2>Detailed Findings</h2>
 
   {% if not findings %}
@@ -418,7 +477,7 @@ code {
 </div>
 
 {# Remediation Roadmap #}
-<div class="section">
+<div class="section" id="remediation-roadmap">
   <h2>Remediation Roadmap</h2>
 
   <div class="remediation-block">
