@@ -3,13 +3,18 @@ import os
 import uuid
 from datetime import datetime, timezone
 
+from typing import Literal
+
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models.models import Finding, Scan, SearchHit as SearchHitModel
+from app.reports.compliance import get_controls_for_secret_type
 from app.schemas.scans import (
+    ComplianceMappingResponse,
+    FindingDetailResponse,
     FindingResponse,
     FindingsListResponse,
     ScanCreate,
@@ -168,3 +173,70 @@ async def get_search_hits(
         ],
         "total": total,
     }
+
+
+@app.get("/scans/{scan_id}/findings/{finding_id}", response_model=FindingDetailResponse)
+async def get_finding(
+    scan_id: uuid.UUID,
+    finding_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> FindingDetailResponse:
+    finding = (
+        db.query(Finding)
+        .filter(Finding.scan_id == scan_id, Finding.id == finding_id)
+        .first()
+    )
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+
+    controls = get_controls_for_secret_type(db, finding.secret_type)
+    base = FindingResponse.model_validate(finding).model_dump()
+    return FindingDetailResponse(
+        compliance_controls=[ComplianceMappingResponse.model_validate(c) for c in controls],
+        **base,
+    )
+
+
+@app.get("/scans/{scan_id}/report")
+async def get_report(
+    scan_id: uuid.UUID,
+    format: Literal["pdf", "json"] = Query("pdf"),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    findings = (
+        db.query(Finding)
+        .filter(Finding.scan_id == scan_id)
+        .order_by(Finding.severity, Finding.repo_name)
+        .all()
+    )
+
+    if format == "json":
+        import json
+
+        payload = {
+            "scan": ScanResponse.model_validate(scan).model_dump(mode="json"),
+            "findings": [
+                FindingResponse.model_validate(f).model_dump(mode="json")
+                for f in findings
+            ],
+        }
+        filename = f"redact-report-{scan.target_name}-{scan.id}.json"
+        return StreamingResponse(
+            iter([json.dumps(payload, indent=2)]),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    from app.reports.pdf import generate_pdf_report  # noqa: PLC0415
+
+    pdf_bytes = generate_pdf_report(scan, findings, db)
+    filename = f"redact-report-{scan.target_name}-{scan.id}.pdf"
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

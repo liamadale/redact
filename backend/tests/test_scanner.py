@@ -1,10 +1,13 @@
 import json
 from unittest.mock import MagicMock, patch
 
+from datetime import datetime
+
 from app.scanning.deep_scan import (
     _classify_severity,
     _compute_dedup_hash,
     _parse_finding,
+    _parse_timestamp,
     _redact_secret,
     _run_trufflehog,
 )
@@ -134,6 +137,36 @@ def test_run_trufflehog_includes_no_update_flag():
 
         cmd = mock_popen.call_args[0][0]
         assert "--no-update" in cmd
+
+
+def test_parse_timestamp_z_suffix():
+    """TruffleHog emits 'Z' suffix — must parse to naive UTC datetime."""
+    dt = _parse_timestamp("2026-01-15T10:00:00Z")
+    assert isinstance(dt, datetime)
+    assert dt.tzinfo is None  # naive UTC — matches DateTime column reads from DB
+    assert dt.year == 2026
+    assert dt.hour == 10
+
+
+def test_parse_timestamp_offset():
+    dt = _parse_timestamp("2026-01-15T10:00:00+00:00")
+    assert isinstance(dt, datetime)
+    assert dt.tzinfo is None
+
+
+def test_parse_timestamp_none():
+    assert _parse_timestamp(None) is None
+
+
+def test_parse_finding_commit_date_is_datetime():
+    """Regression: commit_date must be a datetime, not a raw string.
+
+    _upsert_finding compares commit_date against existing.first_seen (a datetime
+    read from PostgreSQL). If commit_date is a string this raises TypeError.
+    """
+    parsed = _parse_finding(SAMPLE_TRUFFLEHOG_OUTPUT, "org/repo")
+    assert isinstance(parsed["commit_date"], datetime)
+    assert parsed["commit_date"].tzinfo is None  # naive UTC
 
 
 def test_run_trufflehog_uses_bare_flag():

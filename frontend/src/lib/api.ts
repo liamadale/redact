@@ -2,6 +2,7 @@ import type {
   Scan,
   ScanCreate,
   FindingsResponse,
+  FindingDetail,
   HitsResponse,
 } from "./types";
 
@@ -31,4 +32,13 @@ export const api = {
 
   getHits: (id: string, offset = 0, limit = 50) =>
     request<HitsResponse>(`/scans/${id}/hits?offset=${offset}&limit=${limit}`),
+
+  getFinding: (scanId: string, findingId: string) =>
+    request<FindingDetail>(`/scans/${scanId}/findings/${findingId}`),
+
+  downloadReport: async (scanId: string, format: "pdf" | "json"): Promise<Blob> => {
+    const res = await fetch(`${API_BASE}/scans/${scanId}/report?format=${format}`);
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    return res.blob();
+  },
 };

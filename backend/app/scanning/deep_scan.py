@@ -8,6 +8,23 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+
+def _parse_timestamp(ts: str | None) -> datetime | None:
+    """Parse a TruffleHog ISO-8601 timestamp into a naive-UTC datetime.
+
+    TruffleHog emits timestamps as strings (e.g. "2026-01-15T10:00:00Z").
+    The DateTime SQLAlchemy column stores naive UTC, so we strip tzinfo here
+    to avoid TypeError when comparing against values read back from the DB.
+    """
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return dt.replace(tzinfo=None)
+    except ValueError:
+        logger.warning("Could not parse timestamp: %s", ts)
+        return None
+
 from sqlalchemy.orm import Session
 
 from app.models.models import Finding, Scan
@@ -127,7 +144,7 @@ def _parse_finding(raw: dict, repo_name: str) -> dict:
         "file_path": file_path,
         "line_number": source_metadata.get("line"),
         "commit_sha": source_metadata.get("commit"),
-        "commit_date": source_metadata.get("timestamp"),
+        "commit_date": _parse_timestamp(source_metadata.get("timestamp")),
         "commit_author": source_metadata.get("email"),
         "commit_message": source_metadata.get("message"),
         "verified": verified,
