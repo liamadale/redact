@@ -19,3 +19,18 @@ body {
   background-color: var(--color-tokyo-bg);
   color: var(--color-tokyo-fg);
 }
+
+@keyframes indeterminate {
+  0% { transform: translateX(-200%); }
+  100% { transform: translateX(400%); }
+}
+
+@keyframes log-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
