@@ -1,6 +1,8 @@
 import type {
   Scan,
   ScanCreate,
+  ScanListResponse,
+  AggregateMetrics,
   FindingsResponse,
   FindingDetail,
   HitsResponse,
@@ -20,6 +22,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  listScans: () => request<ScanListResponse>("/scans"),
+
+  getMetrics: () => request<AggregateMetrics>("/metrics"),
+
   createScan: (body: ScanCreate) =>
     request<Scan>("/scans", { method: "POST", body: JSON.stringify(body) }),
 
