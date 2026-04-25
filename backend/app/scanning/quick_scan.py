@@ -42,6 +42,9 @@ async def run_quick_scan(
     try:
         # Update scan status
         scan = db.query(Scan).filter(Scan.id == scan_id).first()
+        if not scan:
+            logger.error("Scan %s not found in DB", scan_id)
+            return
         scan.status = "running"
         db.commit()
 
@@ -72,8 +75,9 @@ async def run_quick_scan(
     except Exception as e:
         logger.error("Quick scan %s failed: %s", scan_id, e)
         scan = db.query(Scan).filter(Scan.id == scan_id).first()
-        scan.status = "failed"
-        db.commit()
+        if scan:
+            scan.status = "failed"
+            db.commit()
         raise
     finally:
         await adapter.close()
