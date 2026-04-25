@@ -435,6 +435,13 @@ _ROWS = [
     {
         "secret_type": "default",
         "framework": "NIST_800_53",
+        "control_id": "AU-2",
+        "control_title": "Audit Events",
+        "description": "Exposed credentials require audit logging of all access and usage to detect unauthorized activity.",
+    },
+    {
+        "secret_type": "default",
+        "framework": "NIST_800_53",
         "control_id": "CM-6",
         "control_title": "Configuration Settings",
         "description": "Credentials must not be hardcoded in configuration files committed to VCS.",
