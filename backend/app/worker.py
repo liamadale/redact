@@ -44,11 +44,13 @@ def _publish_progress(scan_id: str, data: dict) -> None:
 
 
 @app.task(name="redact.quick_scan")
-def task_quick_scan(scan_id: str, target: str, token: str | None = None) -> None:
+def task_quick_scan(scan_id: str, target: str, session_id: str) -> None:
     """Run quick scan (GitHub Search API) as background task."""
     import asyncio
 
-    token = token or os.environ.get("GITHUB_TOKEN")
+    from app.session import get_token
+
+    token = get_token(session_id) or os.environ.get("GITHUB_TOKEN")
     db = SessionLocal()
     try:
         asyncio.run(run_quick_scan(uuid.UUID(scan_id), target, token, db))
@@ -62,10 +64,57 @@ def task_quick_scan(scan_id: str, target: str, token: str | None = None) -> None
 
 
 @app.task(name="redact.deep_scan")
-def task_deep_scan(scan_id: str, repos: list[dict], timeout: int = 300) -> None:
+def task_deep_scan(
+    scan_id: str, target_name: str, target_type: str, session_id: str,
+    timeout: int = 300,
+) -> None:
     """Run deep scan (clone + TruffleHog) as background task."""
+    import asyncio
+
+    from app.adapters.github import GitHubAdapter
+    from app.session import get_token
+
+    from app.models.models import Scan
+
     db = SessionLocal()
     try:
+        # Mark running before repo listing so UI shows progress
+        scan = db.query(Scan).filter(Scan.id == uuid.UUID(scan_id)).first()
+        if scan:
+            scan.status = "running"
+            db.commit()
+
+        # Build repo list — moved here from route handler
+        if target_type == "repo":
+            repos = [
+                {
+                    "full_name": target_name,
+                    "clone_url": f"https://github.com/{target_name}.git",
+                }
+            ]
+        else:
+            token = get_token(session_id) or os.environ.get("GITHUB_TOKEN")
+            adapter = GitHubAdapter(token=token)
+
+            async def _list() -> list[dict]:
+                try:
+                    result = await adapter.list_repos(target_name)
+                finally:
+                    await adapter.close()
+                return [
+                    {"full_name": r.full_name, "clone_url": r.clone_url}
+                    for r in result
+                ]
+
+            repos = asyncio.run(_list())
+
+        if not repos:
+            scan = db.query(Scan).filter(Scan.id == uuid.UUID(scan_id)).first()
+            if scan:
+                scan.status = "failed"
+                db.commit()
+            _publish_progress(scan_id, {"event": "failed", "error": "No public repos found"})
+            return
 
         def on_progress(data: dict) -> None:
             _publish_progress(scan_id, data)

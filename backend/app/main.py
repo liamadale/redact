@@ -15,6 +15,7 @@ from app.schemas.scans import (
     ScanCreate,
     ScanResponse,
 )
+from app.session import store_token
 from app.worker import task_deep_scan, task_quick_scan
 
 app = FastAPI(title="Redact", version="0.1.0")
@@ -35,9 +36,13 @@ async def health():
 
 @app.post("/scans", response_model=ScanResponse, status_code=201)
 async def create_scan(body: ScanCreate, db: Session = Depends(get_db)):
-    # Use a placeholder session_id (real session handling comes with auth)
     raw_session = str(uuid.uuid4())
     session_id = hashlib.sha256(raw_session.encode()).hexdigest()
+
+    # Store token in Redis session — never pass through Celery
+    token = body.token or os.environ.get("GITHUB_TOKEN")
+    if token:
+        store_token(session_id, token)
 
     scan = Scan(
         id=uuid.uuid4(),
@@ -55,39 +60,12 @@ async def create_scan(body: ScanCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(scan)
 
+    # Queue task — worker reads token from Redis session if needed
     if body.scan_type == "quick":
-        task_quick_scan.delay(str(scan.id), body.target_name, body.token)
-    elif body.scan_type == "deep":
-        if body.target_type == "repo":
-            # Single repo — construct directly
-            repo_dicts = [
-                {
-                    "full_name": body.target_name,
-                    "clone_url": f"https://github.com/{body.target_name}.git",
-                }
-            ]
-        else:
-            # Org/user — list repos via adapter
-            from app.adapters.github import GitHubAdapter
-
-            adapter = GitHubAdapter(
-                token=body.token or os.environ.get("GITHUB_TOKEN")
-            )
-            try:
-                repos = await adapter.list_repos(body.target_name)
-            finally:
-                await adapter.close()
-
-            if not repos:
-                raise HTTPException(status_code=404, detail="No public repos found")
-
-            repo_dicts = [
-                {"full_name": r.full_name, "clone_url": r.clone_url} for r in repos
-            ]
-        task_deep_scan.delay(str(scan.id), repo_dicts)
+        task_quick_scan.delay(str(scan.id), body.target_name, session_id)
     else:
-        raise HTTPException(
-            status_code=400, detail="scan_type must be 'quick' or 'deep'"
+        task_deep_scan.delay(
+            str(scan.id), body.target_name, body.target_type, session_id
         )
 
     return scan
