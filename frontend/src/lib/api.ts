@@ -36,8 +36,15 @@ export const api = {
   getFinding: (scanId: string, findingId: string) =>
     request<FindingDetail>(`/scans/${scanId}/findings/${findingId}`),
 
-  downloadReport: async (scanId: string, format: "pdf" | "json"): Promise<Blob> => {
-    const res = await fetch(`${API_BASE}/scans/${scanId}/report?format=${format}`);
+  downloadReport: async (
+    scanId: string,
+    format: "pdf" | "json",
+    filters?: { severity?: string[]; repo?: string[] },
+  ): Promise<Blob> => {
+    const params = new URLSearchParams({ format });
+    if (filters?.severity) filters.severity.forEach((s) => params.append("severity", s));
+    if (filters?.repo) filters.repo.forEach((r) => params.append("repo", r));
+    const res = await fetch(`${API_BASE}/scans/${scanId}/report?${params}`);
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
     return res.blob();
   },

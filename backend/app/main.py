@@ -201,18 +201,20 @@ async def get_finding(
 async def get_report(
     scan_id: uuid.UUID,
     format: Literal["pdf", "json"] = Query("pdf"),
+    severity: list[str] | None = Query(None),
+    repo: list[str] | None = Query(None),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     scan = db.query(Scan).filter(Scan.id == scan_id).first()
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
 
-    findings = (
-        db.query(Finding)
-        .filter(Finding.scan_id == scan_id)
-        .order_by(Finding.severity, Finding.repo_name)
-        .all()
-    )
+    query = db.query(Finding).filter(Finding.scan_id == scan_id)
+    if severity:
+        query = query.filter(Finding.severity.in_(severity))
+    if repo:
+        query = query.filter(Finding.repo_name.in_(repo))
+    findings = query.order_by(Finding.severity, Finding.repo_name).all()
 
     if format == "json":
         import json
