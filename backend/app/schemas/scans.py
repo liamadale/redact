@@ -1,15 +1,44 @@
+import re
 import uuid
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+# GitHub org/user: alphanumeric + hyphens, 1-39 chars, no leading/trailing hyphen
+_GH_OWNER_RE = re.compile(r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$")
+# GitHub repo name: alphanumeric, hyphens, underscores, dots, 1-100 chars
+_GH_REPO_RE = re.compile(r"^[a-zA-Z0-9._-]{1,100}$")
 
 
 class ScanCreate(BaseModel):
-    platform: str = "github"
-    target_type: str  # 'org', 'user', 'repo'
+    platform: Literal["github"] = "github"
+    target_type: Literal["org", "user", "repo"]
     target_name: str
-    scan_type: str  # 'quick', 'deep'
+    scan_type: Literal["quick", "deep"]
     token: str | None = None
+
+    @field_validator("target_name")
+    @classmethod
+    def validate_target_name(cls, v: str, info: object) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("target_name must not be empty")
+        # Access target_type from already-validated data
+        values = info.data if hasattr(info, "data") else {}  # type: ignore[union-attr]
+        target_type = values.get("target_type", "")
+        if target_type == "repo":
+            if "/" not in v:
+                raise ValueError("repo target_name must be in 'owner/repo' format")
+            owner, repo = v.split("/", 1)
+            if not _GH_OWNER_RE.match(owner):
+                raise ValueError(f"invalid GitHub owner: {owner}")
+            if not _GH_REPO_RE.match(repo):
+                raise ValueError(f"invalid GitHub repo name: {repo}")
+        else:
+            if not _GH_OWNER_RE.match(v):
+                raise ValueError(f"invalid GitHub org/user name: {v}")
+        return v
 
 
 class ScanResponse(BaseModel):
