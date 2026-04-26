@@ -46,12 +46,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Run TruffleHog on our own repo
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Run TruffleHog (policy-compliant, no verification)
         run: |
-          docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest \
-            git file:///repo --only-verified --fail
+          git ls-files -z | jq -R -s -c 'split("\u0000")[:-1]' > filelist.json
+
+          docker run --rm \
+            -v $PWD:/repo \
+            ghcr.io/trufflesecurity/trufflehog:latest \
+            filesystem /repo \
+            --fail \
+            --include-paths filelist.json
 
   trivy-fs:
     runs-on: ubuntu-latest
