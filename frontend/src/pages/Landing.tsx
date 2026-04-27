@@ -134,9 +134,22 @@ export function Landing() {
     <div className="min-h-screen px-6 py-12">
       <div className="max-w-2xl mx-auto">
         {/* Wordmark */}
-        <div className="mb-8 text-center">
+        <div className="mb-4 text-center">
           <h1 className="text-4xl font-black tracking-tight text-tokyo-fg mb-1">REDACT</h1>
           <p className="text-tokyo-comment text-xs tracking-widest uppercase">Git Secrets Auditor</p>
+          <p
+            id="compliance-banner"
+            className="mt-4 inline-flex items-center gap-2.5 bg-tokyo-bg-dark border border-l-[3px] border-tokyo-red/30 border-l-tokyo-red rounded-md px-3.5 py-2"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="shrink-0">
+              <path d="M8 1L15 14H1L8 1Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" className="text-tokyo-red" />
+              <line x1="8" y1="6" x2="8" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-tokyo-red" />
+              <circle cx="8" cy="12" r="0.75" fill="currentColor" className="text-tokyo-red" />
+            </svg>
+            <span className="font-mono text-[11px] tracking-widest uppercase text-tokyo-red">
+              This tool is for authorized security auditing only.
+            </span>
+          </p>
         </div>
 
         {/* New scan form */}
