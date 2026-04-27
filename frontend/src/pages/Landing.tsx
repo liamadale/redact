@@ -197,14 +197,14 @@ export function Landing() {
                           onClick={() => handlePlatformChange(labels[p] as "GitHub" | "GitLab" | "BitBucket")}
                           className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
                             isEnabled
-                              ? "bg-tokyo-green/20 border-tokyo-green text-tokyo-green"
+                              ? "bg-tokyo-cyan/20 border-tokyo-cyan text-tokyo-cyan"
                               : "border-tokyo-border/40 text-tokyo-comment/30 cursor-not-allowed"
                           }`}
                         >
                           {labels[p]}
                         </button>
                         {!isEnabled && (
-                          <span className="absolute -top-2 -right-1 text-[9px] font-semibold bg-tokyo-bg-highlight text-tokyo-comment/40 rounded px-1 leading-4">
+                          <span className="absolute -top-2 -right-1 text-[9px] font-semibold bg-tokyo-bg-highlight text-tokyo-blue/40 rounded px-1 leading-4">
                             soon
                           </span>
                         )}
