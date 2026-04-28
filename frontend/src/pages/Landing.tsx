@@ -107,6 +107,9 @@ export function Landing() {
   const [target, setTarget] = useState("");
   const [scanType, setScanType] = useState<"quick" | "deep">("quick");
   const [targetType, setTargetType] = useState<"org" | "repo">("org");
+  
+  // Uncomment when platform selection is implemented
+  // const [platform, setPlatform] = useState<"GitHub" | "GitLab" | "BitBucket">("GitHub");
 
   const { data: scanList } = useQuery({
     queryKey: ["scans"],
@@ -125,6 +128,11 @@ export function Landing() {
     e.preventDefault();
     if (!target.trim()) return;
     mutation.mutate({ target_type: targetType, target_name: target.trim(), scan_type: scanType });
+  };
+
+  const handlePlatformChange = (_platform: "GitHub" | "GitLab" | "BitBucket") => {
+    // Uncomment when platform selection is implemented
+    // setPlatform(p);
   };
 
   const info = SCAN_TYPE_INFO[scanType];
@@ -157,7 +165,57 @@ export function Landing() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
-                <div className="flex gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2">
+
+                  {/* Platform toggle 
+                    *
+                    * Not implemented yet, platform selection is currently GitHub only
+                    * When implemented, make the following updates:
+                    *   1. Uncomment: `const [platform, setPlatform] = ...`
+                    *   2. Uncomment: `setPlatform(p);` in handlePlatformChange()
+                    *   3. Add `platform` to `scan_type: scanType`
+                    *      Example: `scan_type: scanType, platform`
+                    */}
+                  {(["github", "gitlab", "bitbucket"] as const).map((p) => {
+                    const enabled: Record<string, boolean> = {
+                      github: true,
+                      gitlab: false,
+                      bitbucket: false,
+                    };
+                    const labels: Record<string, string> = {
+                      github: "GitHub",
+                      gitlab: "GitLab",
+                      bitbucket: "Bitbucket",
+                    };
+                    const isEnabled = enabled[p];
+
+                    return (
+                      <div key={p} className="relative">
+                        <button
+                          type="button"
+                          disabled={!isEnabled}
+                          onClick={() => handlePlatformChange(labels[p] as "GitHub" | "GitLab" | "BitBucket")}
+                          className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                            isEnabled
+                              ? "bg-tokyo-cyan/20 border-tokyo-cyan text-tokyo-cyan"
+                              : "border-tokyo-border/40 text-tokyo-comment/30 cursor-not-allowed"
+                          }`}
+                        >
+                          {labels[p]}
+                        </button>
+                        {!isEnabled && (
+                          <span className="absolute -top-2 -right-1 text-[9px] font-semibold bg-tokyo-bg-highlight text-tokyo-blue/40 rounded px-1 leading-4">
+                            soon
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Divider */}
+                  <div className="h-4 w-px bg-tokyo-border mx-1" />
+
+                  {/* Scope toggle */}
                   {(["org", "repo"] as const).map((t) => (
                     <button
                       key={t}
@@ -173,6 +231,7 @@ export function Landing() {
                     </button>
                   ))}
                 </div>
+
                 <input
                   type="text"
                   value={target}
