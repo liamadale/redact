@@ -50,22 +50,14 @@ Browser → Nginx → FastAPI Backend → Celery Worker (TruffleHog) → Postgre
 ## Quick Start
 
 ```bash
-# 1. Clone
 git clone https://github.com/liamadale/redact.git
 cd redact
-
-# 2. Configure environment
-cp .env.example .env
-# Edit .env — at minimum set SESSION_SECRET_KEY to a random value
-
-# 3. Start all services
-docker compose up --build
-
-# 4. Open
-# App:     http://localhost:80
-# API:     http://localhost:8000/health
-# API docs: http://localhost:8000/docs
+./setup.sh
 ```
+
+The setup script checks prerequisites, creates your `.env`, builds all containers, and opens the dashboard at [http://localhost:3000](http://localhost:3000).
+
+For a detailed walkthrough — including running your first scan, understanding findings, and generating compliance reports — see the **[Getting Started Guide](docs/getting-started.md)**.
 
 ## Environment Variables
 
