@@ -109,6 +109,7 @@ async def create_scan(body: ScanCreate, db: Session = Depends(get_db)):
     # Store token in Redis session — never pass through Celery
     token = body.token or os.environ.get("GITHUB_TOKEN")
     if token:
+        print(f"Token found: {token}")
         store_token(session_id, token)
 
     scan = Scan(

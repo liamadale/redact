@@ -154,13 +154,13 @@ def _parse_finding(raw: dict, repo_name: str) -> dict:
     }
 
 
-def _clone_repo(clone_url: str, dest: Path) -> None:
-    subprocess.run(
-        ["git", "clone", "--mirror", clone_url, str(dest)],
-        check=True,
-        capture_output=True,
-        timeout=120,
-    )
+def _clone_repo(clone_url: str, dest: Path, token: str | None = None) -> None:
+    cmd = ["git"]
+    if token:
+        cmd += ["-c", f"http.extraHeader=Authorization: Bearer {token}"]
+
+    cmd += ["clone", "--mirror", clone_url, str(dest)]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=120)
 
 
 def run_deep_scan(
@@ -169,6 +169,7 @@ def run_deep_scan(
     db: Session,
     timeout: int = DEFAULT_TIMEOUT,
     on_progress=None,
+    token: str | None = None,
 ) -> None:
     """Run deep scan on a list of repos. Each repo dict has 'full_name' and 'clone_url'."""
     scan = db.query(Scan).filter(Scan.id == scan_id).first()
@@ -194,7 +195,7 @@ def run_deep_scan(
                 on_progress({"event": "repo_started", "repo": repo_name})
 
             try:
-                _clone_repo(clone_url, repo_dir)
+                _clone_repo(clone_url, repo_dir, token)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                 logger.error("Failed to clone %s: %s", repo_name, e)
                 continue

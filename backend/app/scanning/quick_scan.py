@@ -51,7 +51,7 @@ async def run_quick_scan(
         hits = await adapter.search_code(target, SEARCH_PATTERNS)
 
         for hit in hits:
-            if hit.repo.is_private:
+            if hit.repo.is_private and token is None:
                 continue
 
             redacted_fragment = _redact_fragment(hit.text_fragment, hit.matched_pattern)

@@ -33,6 +33,7 @@ class GitHubAdapter(PlatformAdapter):
         self._client = httpx.AsyncClient(
             base_url=GITHUB_API, headers=headers, timeout=30
         )
+        self._token = token
 
     async def close(self):
         await self._client.aclose()
@@ -54,7 +55,7 @@ class GitHubAdapter(PlatformAdapter):
             if not data:
                 break
             for r in data:
-                if r.get("private"):
+                if r.get("private") and self._token is None:
                     continue
                 repos.append(
                     Repo(

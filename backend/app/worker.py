@@ -85,6 +85,7 @@ def task_deep_scan(
             db.commit()
 
         # Build repo list — moved here from route handler
+        token = None
         if target_type == "repo":
             repos = [
                 {
@@ -125,6 +126,7 @@ def task_deep_scan(
             db,
             timeout=timeout,
             on_progress=on_progress,
+            token=token,
         )
         _publish_progress(scan_id, {"event": "complete", "scan_type": "deep"})
     except Exception as e:
