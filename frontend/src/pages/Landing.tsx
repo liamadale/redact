@@ -107,6 +107,7 @@ export function Landing() {
   const [target, setTarget] = useState("");
   const [scanType, setScanType] = useState<"quick" | "deep">("quick");
   const [targetType, setTargetType] = useState<"org" | "repo">("org");
+  const [token, setToken] = useState("");
 
   const { data: scanList } = useQuery({
     queryKey: ["scans"],
@@ -124,7 +125,12 @@ export function Landing() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!target.trim()) return;
-    mutation.mutate({ target_type: targetType, target_name: target.trim(), scan_type: scanType });
+    mutation.mutate({
+      target_type: targetType,
+      target_name: target.trim(),
+      scan_type: scanType,
+      token: token.trim() || undefined,
+    });
   };
 
   const info = SCAN_TYPE_INFO[scanType];
@@ -168,6 +174,16 @@ export function Landing() {
                   className="w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
                   autoFocus
                 />
+                <input
+                  type="password"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="Optional PAT"
+                  className="mt-3 w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
+                />
+                <p className="mt-2 text-[10px] text-tokyo-comment font-mono">
+                  Provide a PAT to scan private repositories and user/org repos you have access to.
+                </p>
               </div>
               <div className="flex flex-col gap-2">
                 <div className="flex gap-1.5">
