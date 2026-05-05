@@ -178,7 +178,7 @@ export function Landing() {
                   type="password"
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
-                  placeholder="Optional PAT"
+                  placeholder="optional PAT"
                   className="mt-3 w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
                 />
                 <p className="mt-2 text-[10px] text-tokyo-comment font-mono">
