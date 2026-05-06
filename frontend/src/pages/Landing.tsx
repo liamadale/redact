@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
@@ -109,6 +109,12 @@ export function Landing() {
   const [targetType, setTargetType] = useState<"org" | "repo">("org");
   const [token, setToken] = useState("");
 
+  useEffect(() => {
+    if (targetType === "repo") {
+      setToken("");
+    }
+  }, [targetType]);
+
   const { data: scanList } = useQuery({
     queryKey: ["scans"],
     queryFn: () => api.listScans(),
@@ -160,7 +166,7 @@ export function Landing() {
 
         {/* New scan form */}
         <div className="bg-tokyo-bg-highlight border border-tokyo-border rounded-xl p-6 mb-10">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-2">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
                 <div className="flex gap-2 mb-2">
@@ -187,16 +193,6 @@ export function Landing() {
                   className="w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
                   autoFocus
                 />
-                <input
-                  type="password"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder="optional PAT"
-                  className="mt-3 w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
-                />
-                <p className="mt-2 text-[10px] text-tokyo-comment font-mono">
-                  Provide a PAT to scan private repositories and user/org repos you have access to.
-                </p>
               </div>
               <div className="flex flex-col gap-2">
                 <div className="flex gap-1.5">
@@ -227,6 +223,17 @@ export function Landing() {
                 </button>
               </div>
             </div>
+            {targetType === "org" && (
+              <div className="mt-1">
+                <input
+                  type="password"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="optional PAT for private repos"
+                  className="w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
+                />
+              </div>
+            )}
             {mutation.isError && (
               <p className="text-tokyo-red text-xs">{mutation.error.message}</p>
             )}
