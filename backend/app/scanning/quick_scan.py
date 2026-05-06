@@ -35,6 +35,7 @@ async def run_quick_scan(
     target: str,
     token: str | None,
     db: Session,
+    allow_private: bool = False,
 ) -> None:
     """Run a quick scan using GitHub Search API and store hits."""
     adapter = GitHubAdapter(token=token)
@@ -51,7 +52,7 @@ async def run_quick_scan(
         hits = await adapter.search_code(target, SEARCH_PATTERNS)
 
         for hit in hits:
-            if hit.repo.is_private and token is None:
+            if hit.repo.is_private and not allow_private:
                 continue
 
             redacted_fragment = _redact_fragment(hit.text_fragment, hit.matched_pattern)

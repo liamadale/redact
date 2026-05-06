@@ -98,16 +98,7 @@ export function Metrics() {
     queryFn: () => api.getMetrics(),
   });
 
-  if (!scanId || !scan) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8">
-        <p className="text-tokyo-comment mb-4">No scan selected</p>
-        <Link to="/" className="text-tokyo-blue hover:underline">Start a new scan</Link>
-      </div>
-    );
-  }
-
-  const allFindings = findings?.findings ?? [];
+  const allFindings = useMemo(() => findings?.findings ?? [], [findings]);
   const repoSevData = useMemo(() => buildRepoSeverityData(allFindings), [allFindings]);
   const verifiedData = useMemo(() => buildVerifiedData(allFindings), [allFindings]);
   const authorData = useMemo(() => buildAuthorData(allFindings), [allFindings]);
@@ -117,6 +108,15 @@ export function Metrics() {
     for (const f of allFindings) c[f.severity]++;
     return c;
   }, [allFindings]);
+
+  if (!scanId || !scan) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-8">
+        <p className="text-tokyo-comment mb-4">No scan selected</p>
+        <Link to="/" className="text-tokyo-blue hover:underline">Start a new scan</Link>
+      </div>
+    );
+  }
 
   const uniqueTypes = new Set(allFindings.map((f) => f.secret_type)).size;
   const uniqueRepos = new Set(allFindings.map((f) => f.repo_name)).size;

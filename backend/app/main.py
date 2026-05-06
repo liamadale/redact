@@ -129,10 +129,11 @@ async def create_scan(body: ScanCreate, db: Session = Depends(get_db)):
 
     # Queue task — worker reads token from Redis session if needed
     if body.scan_type == "quick":
-        task_quick_scan.delay(str(scan.id), body.target_name, session_id)
+        task_quick_scan.delay(str(scan.id), body.target_name, session_id, allow_private=body.allow_private)
     else:
         task_deep_scan.delay(
-            str(scan.id), body.target_name, body.target_type, session_id
+            str(scan.id), body.target_name, body.target_type, session_id,
+            allow_private=body.allow_private,
         )
 
     return scan

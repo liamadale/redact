@@ -38,7 +38,7 @@ class GitHubAdapter(PlatformAdapter):
     async def close(self):
         await self._client.aclose()
 
-    async def list_repos(self, org: str) -> list[Repo]:
+    async def list_repos(self, org: str, allow_private: bool = False) -> list[Repo]:
         repos: list[Repo] = []
         page = 1
         while True:
@@ -53,19 +53,19 @@ class GitHubAdapter(PlatformAdapter):
             else:
                 # Try as org first, fall back to user
                 resp = await self._client.get(
-                    f"/orgs/{org}/repos", params={"per_page": 100, "page": page, "type": "all"}
+                    f"/orgs/{org}/repos", params={"per_page": 100, "page": page}
                 )
                 if resp.status_code == 404:
                     resp = await self._client.get(
-                        f"/users/{org}/repos", params={"per_page": 100, "page": page, "type": "all", "visibility": "all"}
+                        f"/users/{org}/repos", params={"per_page": 100, "page": page}
                     )
-            
+
             resp.raise_for_status()
             data = resp.json()
             if not data:
                 break
             for r in data:
-                if r.get("private") and self._token is None:
+                if r.get("private") and not allow_private:
                     continue
                 repos.append(
                     Repo(

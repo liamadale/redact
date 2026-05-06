@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
@@ -109,12 +109,6 @@ export function Landing() {
   const [targetType, setTargetType] = useState<"org" | "repo">("org");
   const [token, setToken] = useState("");
 
-  useEffect(() => {
-    if (targetType === "repo") {
-      setToken("");
-    }
-  }, [targetType]);
-
   const { data: scanList } = useQuery({
     queryKey: ["scans"],
     queryFn: () => api.listScans(),
@@ -136,6 +130,7 @@ export function Landing() {
       target_name: target.trim(),
       scan_type: scanType,
       token: token.trim() || undefined,
+      allow_private: !!token.trim(),
     });
   };
 
@@ -191,7 +186,6 @@ export function Landing() {
                   onChange={(e) => setTarget(e.target.value)}
                   placeholder={targetType === "repo" ? "owner/repo" : "github-org or username"}
                   className="w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
-                  autoFocus
                 />
               </div>
               <div className="flex flex-col gap-2">
@@ -223,17 +217,15 @@ export function Landing() {
                 </button>
               </div>
             </div>
-            {targetType === "org" && (
-              <div className="mt-1">
-                <input
-                  type="password"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder="optional PAT for private repos"
-                  className="w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
-                />
-              </div>
-            )}
+            <div className="mt-1">
+              <input
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="GitHub PAT (enables private repo scanning)"
+                className="w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
+              />
+            </div>
             {mutation.isError && (
               <p className="text-tokyo-red text-xs">{mutation.error.message}</p>
             )}
@@ -255,7 +247,7 @@ export function Landing() {
         )}
 
         <p className="mt-8 text-xs text-tokyo-comment text-center max-w-sm mx-auto leading-relaxed">
-          Public repositories only. Deep scans perform live credential verification via TruffleHog.
+          Public repositories by default. Provide a PAT to scan private repos. Deep scans perform live credential verification via TruffleHog.
         </p>
       </div>
     </div>

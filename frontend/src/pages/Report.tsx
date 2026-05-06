@@ -47,7 +47,7 @@ export function Report() {
     enabled: !!scanId,
   });
 
-  const allFindings = findings?.findings ?? [];
+  const allFindings = useMemo(() => findings?.findings ?? [], [findings]);
   const repos = useMemo(
     () => [...new Set(allFindings.map((f) => f.repo_name))].sort(),
     [allFindings],
@@ -61,14 +61,16 @@ export function Report() {
   const toggleSeverity = (s: Severity) =>
     setSelSeverity((prev) => {
       const next = new Set(prev);
-      next.has(s) ? next.delete(s) : next.add(s);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
       return next;
     });
 
   const toggleRepo = (r: string) =>
     setSelRepos((prev) => {
       const next = new Set(prev);
-      next.has(r) ? next.delete(r) : next.add(r);
+      if (next.has(r)) next.delete(r);
+      else next.add(r);
       return next;
     });
 

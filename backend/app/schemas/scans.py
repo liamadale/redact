@@ -17,6 +17,7 @@ class ScanCreate(BaseModel):
     target_name: str
     scan_type: Literal["quick", "deep"]
     token: str | None = None
+    allow_private: bool = False
 
     @field_validator("target_name")
     @classmethod

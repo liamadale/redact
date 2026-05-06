@@ -8,6 +8,15 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy.orm import Session
+
+from app.models.models import Finding, Scan
+
+logger = logging.getLogger(__name__)
+
+SCAN_DIR = Path("/tmp/scans")
+MAX_REPO_SIZE_MB = 500
+
 
 def _parse_timestamp(ts: str | None) -> datetime | None:
     """Parse a TruffleHog ISO-8601 timestamp into a naive-UTC datetime.
@@ -24,15 +33,6 @@ def _parse_timestamp(ts: str | None) -> datetime | None:
     except ValueError:
         logger.warning("Could not parse timestamp: %s", ts)
         return None
-
-from sqlalchemy.orm import Session
-
-from app.models.models import Finding, Scan
-
-logger = logging.getLogger(__name__)
-
-SCAN_DIR = Path("/tmp/scans")
-MAX_REPO_SIZE_MB = 500
 DEFAULT_TIMEOUT = 300
 
 
@@ -155,12 +155,13 @@ def _parse_finding(raw: dict, repo_name: str) -> dict:
 
 
 def _clone_repo(clone_url: str, dest: Path, token: str | None = None) -> None:
-
     if token and "github.com" in clone_url:
-        # embed token in URL for more reliable authentication
-        clone_url = clone_url.replace("https://", f"https://oauth2:{token}@")
-
-    cmd = ["git", "clone", "--mirror", clone_url, str(dest)]
+        cmd = [
+            "git", "-c", f"http.extraHeader=Authorization: Bearer {token}",
+            "clone", "--mirror", clone_url, str(dest),
+        ]
+    else:
+        cmd = ["git", "clone", "--mirror", clone_url, str(dest)]
     subprocess.run(cmd, check=True, capture_output=True, timeout=120)
 
 

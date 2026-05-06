@@ -49,6 +49,7 @@ export interface ScanCreate {
   target_name: string;
   scan_type: "quick" | "deep";
   token?: string;
+  allow_private?: boolean;
 }
 
 export interface ScanSummary {
