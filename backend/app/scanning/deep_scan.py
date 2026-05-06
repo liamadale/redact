@@ -8,6 +8,15 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy.orm import Session
+
+from app.models.models import Finding, Scan
+
+logger = logging.getLogger(__name__)
+
+SCAN_DIR = Path("/tmp/scans")
+MAX_REPO_SIZE_MB = 500
+
 
 def _parse_timestamp(ts: str | None) -> datetime | None:
     """Parse a TruffleHog ISO-8601 timestamp into a naive-UTC datetime.
@@ -24,15 +33,6 @@ def _parse_timestamp(ts: str | None) -> datetime | None:
     except ValueError:
         logger.warning("Could not parse timestamp: %s", ts)
         return None
-
-from sqlalchemy.orm import Session
-
-from app.models.models import Finding, Scan
-
-logger = logging.getLogger(__name__)
-
-SCAN_DIR = Path("/tmp/scans")
-MAX_REPO_SIZE_MB = 500
 DEFAULT_TIMEOUT = 300
 
 
@@ -154,13 +154,15 @@ def _parse_finding(raw: dict, repo_name: str) -> dict:
     }
 
 
-def _clone_repo(clone_url: str, dest: Path) -> None:
-    subprocess.run(
-        ["git", "clone", "--mirror", clone_url, str(dest)],
-        check=True,
-        capture_output=True,
-        timeout=120,
-    )
+def _clone_repo(clone_url: str, dest: Path, token: str | None = None) -> None:
+    if token and "github.com" in clone_url:
+        cmd = [
+            "git", "-c", f"http.extraHeader=Authorization: Bearer {token}",
+            "clone", "--mirror", clone_url, str(dest),
+        ]
+    else:
+        cmd = ["git", "clone", "--mirror", clone_url, str(dest)]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=120)
 
 
 def run_deep_scan(
@@ -169,6 +171,7 @@ def run_deep_scan(
     db: Session,
     timeout: int = DEFAULT_TIMEOUT,
     on_progress=None,
+    token: str | None = None,
 ) -> None:
     """Run deep scan on a list of repos. Each repo dict has 'full_name' and 'clone_url'."""
     scan = db.query(Scan).filter(Scan.id == scan_id).first()
@@ -194,7 +197,7 @@ def run_deep_scan(
                 on_progress({"event": "repo_started", "repo": repo_name})
 
             try:
-                _clone_repo(clone_url, repo_dir)
+                _clone_repo(clone_url, repo_dir, token)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                 logger.error("Failed to clone %s: %s", repo_name, e)
                 continue

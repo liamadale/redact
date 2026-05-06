@@ -44,7 +44,7 @@ def _publish_progress(scan_id: str, data: dict) -> None:
 
 
 @app.task(name="redact.quick_scan")
-def task_quick_scan(scan_id: str, target: str, session_id: str) -> None:
+def task_quick_scan(scan_id: str, target: str, session_id: str, allow_private: bool = False) -> None:
     """Run quick scan (GitHub Search API) as background task."""
     import asyncio
 
@@ -53,7 +53,7 @@ def task_quick_scan(scan_id: str, target: str, session_id: str) -> None:
     token = get_token(session_id) or os.environ.get("GITHUB_TOKEN")
     db = SessionLocal()
     try:
-        asyncio.run(run_quick_scan(uuid.UUID(scan_id), target, token, db))
+        asyncio.run(run_quick_scan(uuid.UUID(scan_id), target, token, db, allow_private=allow_private))
         _publish_progress(scan_id, {"event": "complete", "scan_type": "quick"})
     except Exception as e:
         logger.error("Quick scan task failed: %s", e)
@@ -66,7 +66,7 @@ def task_quick_scan(scan_id: str, target: str, session_id: str) -> None:
 @app.task(name="redact.deep_scan")
 def task_deep_scan(
     scan_id: str, target_name: str, target_type: str, session_id: str,
-    timeout: int = 300,
+    timeout: int = 300, allow_private: bool = False,
 ) -> None:
     """Run deep scan (clone + TruffleHog) as background task."""
     import asyncio
@@ -85,6 +85,7 @@ def task_deep_scan(
             db.commit()
 
         # Build repo list — moved here from route handler
+        token = get_token(session_id) or os.environ.get("GITHUB_TOKEN")
         if target_type == "repo":
             repos = [
                 {
@@ -93,12 +94,11 @@ def task_deep_scan(
                 }
             ]
         else:
-            token = get_token(session_id) or os.environ.get("GITHUB_TOKEN")
             adapter = GitHubAdapter(token=token)
 
             async def _list() -> list[dict]:
                 try:
-                    result = await adapter.list_repos(target_name)
+                    result = await adapter.list_repos(target_name, allow_private=allow_private)
                 finally:
                     await adapter.close()
                 return [
@@ -113,7 +113,7 @@ def task_deep_scan(
             if scan:
                 scan.status = "failed"
                 db.commit()
-            _publish_progress(scan_id, {"event": "failed", "error": "No public repos found"})
+            _publish_progress(scan_id, {"event": "failed", "error": "No repos found"})
             return
 
         def on_progress(data: dict) -> None:
@@ -125,6 +125,7 @@ def task_deep_scan(
             db,
             timeout=timeout,
             on_progress=on_progress,
+            token=token,
         )
         _publish_progress(scan_id, {"event": "complete", "scan_type": "deep"})
     except Exception as e:

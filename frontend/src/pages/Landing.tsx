@@ -107,6 +107,7 @@ export function Landing() {
   const [target, setTarget] = useState("");
   const [scanType, setScanType] = useState<"quick" | "deep">("quick");
   const [targetType, setTargetType] = useState<"org" | "repo">("org");
+  const [token, setToken] = useState("");
 
   const { data: scanList } = useQuery({
     queryKey: ["scans"],
@@ -124,7 +125,13 @@ export function Landing() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!target.trim()) return;
-    mutation.mutate({ target_type: targetType, target_name: target.trim(), scan_type: scanType });
+    mutation.mutate({
+      target_type: targetType,
+      target_name: target.trim(),
+      scan_type: scanType,
+      token: token.trim() || undefined,
+      allow_private: !!token.trim(),
+    });
   };
 
   const info = SCAN_TYPE_INFO[scanType];
@@ -154,7 +161,7 @@ export function Landing() {
 
         {/* New scan form */}
         <div className="bg-tokyo-bg-highlight border border-tokyo-border rounded-xl p-6 mb-10">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-2">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
                 <div className="flex gap-2 mb-2">
@@ -179,7 +186,6 @@ export function Landing() {
                   onChange={(e) => setTarget(e.target.value)}
                   placeholder={targetType === "repo" ? "owner/repo" : "github-org or username"}
                   className="w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
-                  autoFocus
                 />
               </div>
               <div className="flex flex-col gap-2">
@@ -211,6 +217,15 @@ export function Landing() {
                 </button>
               </div>
             </div>
+            <div className="mt-1">
+              <input
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="GitHub PAT (enables private repo scanning)"
+                className="w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
+              />
+            </div>
             {mutation.isError && (
               <p className="text-tokyo-red text-xs">{mutation.error.message}</p>
             )}
@@ -232,7 +247,7 @@ export function Landing() {
         )}
 
         <p className="mt-8 text-xs text-tokyo-comment text-center max-w-sm mx-auto leading-relaxed">
-          Public repositories only. Deep scans perform live credential verification via TruffleHog.
+          Public repositories by default. Provide a PAT to scan private repos. Deep scans perform live credential verification via TruffleHog.
         </p>
       </div>
     </div>

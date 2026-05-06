@@ -33,28 +33,39 @@ class GitHubAdapter(PlatformAdapter):
         self._client = httpx.AsyncClient(
             base_url=GITHUB_API, headers=headers, timeout=30
         )
+        self._token = token
 
     async def close(self):
         await self._client.aclose()
 
-    async def list_repos(self, org: str) -> list[Repo]:
+    async def list_repos(self, org: str, allow_private: bool = False) -> list[Repo]:
         repos: list[Repo] = []
         page = 1
         while True:
-            # Try as org first, fall back to user
-            resp = await self._client.get(
-                f"/orgs/{org}/repos", params={"per_page": 100, "page": page}
-            )
-            if resp.status_code == 404:
+            # If we have a token, use /user/repos to get all repos the authenticated user has access to
+            if self._token:
+                resp = await self._client.get("/user/repos", params={
+                    "per_page": 100,
+                    "page": page,
+                    "visibility": "all",
+                    "affiliation": "owner,collaborator,organization_member"
+                })
+            else:
+                # Try as org first, fall back to user
                 resp = await self._client.get(
-                    f"/users/{org}/repos", params={"per_page": 100, "page": page}
+                    f"/orgs/{org}/repos", params={"per_page": 100, "page": page}
                 )
+                if resp.status_code == 404:
+                    resp = await self._client.get(
+                        f"/users/{org}/repos", params={"per_page": 100, "page": page}
+                    )
+
             resp.raise_for_status()
             data = resp.json()
             if not data:
                 break
             for r in data:
-                if r.get("private"):
+                if r.get("private") and not allow_private:
                     continue
                 repos.append(
                     Repo(

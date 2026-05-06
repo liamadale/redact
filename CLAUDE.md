@@ -21,23 +21,26 @@ Redact is a web-based git secrets auditor. It scans GitHub orgs/repos for leaked
 docker compose up -d
 
 # Backend tests
-cd backend && pytest tests/ -v --tb=short
+cd backend && uv run pytest tests/ -v --tb=short
+
+# Backend tests (with integration — requires ~/.local/bin/trufflehog)
+cd backend && PATH="$HOME/.local/bin:$PATH" uv run pytest tests/ -v --tb=short
 
 # Frontend tests
 cd frontend && npm test -- --run
 
 # Lint
-cd backend && ruff check .
+cd backend && uv run ruff check .
 cd frontend && npm run lint
 
 # Type check
 cd frontend && npx tsc --noEmit
 
 # DB migrations
-cd backend && alembic upgrade head
+cd backend && uv run alembic upgrade head
 
 # Format
-cd backend && ruff format .
+cd backend && uv run ruff format .
 cd frontend && npm run format
 ```
 
@@ -175,11 +178,11 @@ Rules:
 ## Security Boundaries
 
 - IMPORTANT: Never display, log, or store full secret values. Always redact.
-- IMPORTANT: Redact scans **public repositories only**. The `GitHubAdapter` must check `repo.is_private` and reject private repos before any scan job is queued. Error: `"Private repositories are not supported."` This applies everywhere — org listings, manual repo entry, auto-PR — no exceptions.
+- IMPORTANT: Redact scans **public repositories by default**. Private repo scanning requires the user to provide a PAT and explicitly opt in via `allow_private`. The `GitHubAdapter.list_repos` must filter out private repos unless `allow_private=True`. Never silently include private repos based on token presence alone.
 - IMPORTANT: Never pass `--only-verified` to TruffleHog. It only filters output — it does not prevent live verification API calls, which TruffleHog makes by default for all supported detectors. Use TruffleHog's native `Verified` field in JSON output to set `verified=True` and `severity='critical'` on findings.
 - IMPORTANT: `raw_detector_output` must have `Raw` and `RawV2` fields removed before INSERT — these contain the plaintext secret. Keep `ExtraData` (contains useful metadata like AWS account ID).
 - IMPORTANT: Cloned repos must be deleted after scanning — use `finally` blocks. The worker startup hook and Celery Beat task clean up orphans.
-- IMPORTANT: GitHub PATs are used for GitHub API calls (rate limits) only — never passed to `git clone` (public repos need no credentials) and never passed to Celery workers. In-memory FastAPI session only.
+- IMPORTANT: GitHub PATs are stored in Redis sessions (TTL 2h) and retrieved by workers via `get_token(session_id)`. They are never serialized into Celery task arguments, never embedded in clone URLs, and never persisted to the database. For authenticated `git clone`, use `git -c http.extraHeader=Authorization: Bearer {token}` — never embed credentials in the URL.
 - IMPORTANT: `session_id` in the DB is stored as `SHA256(raw_session_token)` — never the raw token.
 
 ## When Compacting Context
