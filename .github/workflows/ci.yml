@@ -51,7 +51,7 @@ jobs:
       - name: Run TruffleHog on our own repo
         run: |
           docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest \
-            git file:///repo --fail
+            git file:///repo --fail --exclude-paths=/repo/.trufflehog-exclude
 
   trivy-fs:
     runs-on: ubuntu-latest

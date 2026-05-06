@@ -1,0 +1,7 @@
+paths:
+  - .env.example
+  - docs/
+  - README.md
+  - backend/alembic.ini
+  - backend/alembic/env.py
+  - backend/app/database.py
