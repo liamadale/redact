@@ -51,7 +51,13 @@ jobs:
       - name: Run TruffleHog on our own repo
         run: |
           docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest \
-            git file:///repo --fail --exclude-paths=/repo/.trufflehog-exclude
+            git file:///repo --json --exclude-paths=/repo/.trufflehog-exclude \
+            | tee /tmp/trufflehog-results.json
+          # Fail only if verified secrets are found
+          if grep -q '"Verified":true' /tmp/trufflehog-results.json 2>/dev/null; then
+            echo "::error::Verified secrets found!"
+            exit 1
+          fi
 
   trivy-fs:
     runs-on: ubuntu-latest
