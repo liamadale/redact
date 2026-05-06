@@ -155,11 +155,12 @@ def _parse_finding(raw: dict, repo_name: str) -> dict:
 
 
 def _clone_repo(clone_url: str, dest: Path, token: str | None = None) -> None:
-    cmd = ["git"]
-    if token:
-        cmd += ["-c", f"http.extraHeader=Authorization: Bearer {token}"]
 
-    cmd += ["clone", "--mirror", clone_url, str(dest)]
+    if token and "github.com" in clone_url:
+        # embed token in URL for more reliable authentication
+        clone_url = clone_url.replace("https://", f"https://oauth2:{token}@")
+
+    cmd = ["git", "clone", "--mirror", clone_url, str(dest)]
     subprocess.run(cmd, check=True, capture_output=True, timeout=120)
 
 
