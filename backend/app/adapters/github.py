@@ -42,14 +42,24 @@ class GitHubAdapter(PlatformAdapter):
         repos: list[Repo] = []
         page = 1
         while True:
-            # Try as org first, fall back to user
-            resp = await self._client.get(
-                f"/orgs/{org}/repos", params={"per_page": 100, "page": page}
-            )
-            if resp.status_code == 404:
+            # If we have a token, use /user/repos to get all repos the authenticated user has access to
+            if self._token:
+                resp = await self._client.get("/user/repos", params={
+                    "per_page": 100,
+                    "page": page,
+                    "visibility": "all",
+                    "affiliation": "owner,collaborator,organization_member"
+                })
+            else:
+                # Try as org first, fall back to user
                 resp = await self._client.get(
-                    f"/users/{org}/repos", params={"per_page": 100, "page": page}
+                    f"/orgs/{org}/repos", params={"per_page": 100, "page": page, "type": "all"}
                 )
+                if resp.status_code == 404:
+                    resp = await self._client.get(
+                        f"/users/{org}/repos", params={"per_page": 100, "page": page, "type": "all", "visibility": "all"}
+                    )
+            
             resp.raise_for_status()
             data = resp.json()
             if not data:
