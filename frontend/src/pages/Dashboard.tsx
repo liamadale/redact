@@ -124,7 +124,6 @@ export function Dashboard() {
   const { data: findings } = useQuery({
     queryKey: ["findings", scanId],
     queryFn: () => {
-      console.log('[Dashboard] Fetching findings for scanId:', scanId);
       return api.getFindings(scanId!, 0, 200);
     },
     enabled: !!scanId && scan?.scan_type === "deep" && scan?.status !== "queued",
@@ -133,9 +132,6 @@ export function Dashboard() {
   const { repoStats, tableData } = useMemo(() => {
     if (!scan || !findings) return { repoStats: [], tableData: [] };
     const allFindings = findings.findings ?? [];
-    console.log('[Dashboard] findings data:', findings);
-    console.log('[Dashboard] allFindings:', allFindings);
-    console.log('[Dashboard] allFindings length:', allFindings.length);
     const repoStats = Object.entries(
       allFindings.reduce(
         (acc, f) => {
@@ -148,15 +144,12 @@ export function Dashboard() {
         {} as Record<string, { total: number; critical: number; verified: number }>
       )
     ).sort(([, a], [, b]) => b.total - a.total);
-    console.log('[Dashboard] repoStats entries:', repoStats);
-    console.log('[Dashboard] repoStats length:', repoStats.length);
     const tableData: RepoStat[] = repoStats.map(([repo, stats]) => ({
       repo,
       total: stats.total,
       critical: stats.critical,
       verified: stats.verified,
     }));
-    console.log('[Dashboard] tableData:', tableData);
     return { repoStats, tableData };
   }, [scan, findings]);
 
@@ -173,8 +166,6 @@ export function Dashboard() {
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
   });
-
-  console.log('[Dashboard] table rows:', table.getRowModel().rows.length);
 
   if (!scanId || !scan) {
     return (
