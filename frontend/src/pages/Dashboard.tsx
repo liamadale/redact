@@ -17,8 +17,8 @@ import {
 type RepoStat = {
   repo: string;
   total: number;
-  critical: number;
-  verified: number;
+  maxSeverity: "critical" | "high" | "medium" | "low";
+  lastCommitDate: string | null;
 };
 
 const columnHelper = createColumnHelper<RepoStat>();
@@ -57,7 +57,7 @@ const columns = [
       );
     },
   }),
-  columnHelper.accessor('critical', {
+  columnHelper.accessor('maxSeverity', {
     header: ({ column }) => {
       const isSorted = column.getIsSorted();
       return (
@@ -65,16 +65,25 @@ const columns = [
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           className="flex items-center gap-1 hover:text-tokyo-fg cursor-pointer"
         >
-          Critical
+          Max Severity
           <span className="text-xs">
             {isSorted === 'asc' ? ' ↑' : isSorted === 'desc' ? ' ↓' : ''}
           </span>
         </button>
       );
     },
-    cell: info => <span className="text-tokyo-red">{info.getValue() || "—"}</span>,
+    cell: info => {
+      const severity = info.getValue();
+      const severityColors: Record<string, string> = {
+        critical: 'text-tokyo-red',
+        high: 'text-tokyo-orange',
+        medium: 'text-tokyo-yellow',
+        low: 'text-tokyo-fg',
+      };
+      return <span className={`capitalize ${severityColors[severity] || 'text-tokyo-fg'}`}>{severity}</span>;
+    },
   }),
-  columnHelper.accessor('verified', {
+  columnHelper.accessor('lastCommitDate', {
     header: ({ column }) => {
       const isSorted = column.getIsSorted();
       return (
@@ -82,14 +91,18 @@ const columns = [
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           className="flex items-center gap-1 hover:text-tokyo-fg cursor-pointer"
         >
-          Verified
+          Last Commit
           <span className="text-xs">
             {isSorted === 'asc' ? ' ↑' : isSorted === 'desc' ? ' ↓' : ''}
           </span>
         </button>
       );
     },
-    cell: info => <span className="text-tokyo-orange">{info.getValue() || "—"}</span>,
+    cell: info => {
+      const date = info.getValue();
+      if (!date) return <span className="text-tokyo-comment">—</span>;
+      return <span className="text-xs">{new Date(date).toLocaleDateString()}</span>;
+    },
   }),
 ];
 
@@ -123,32 +136,47 @@ export function Dashboard() {
 
   const { data: findings } = useQuery({
     queryKey: ["findings", scanId],
-    queryFn: () => {
-      return api.getFindings(scanId!, 0, 200);
-    },
+    queryFn: () => api.getFindings(scanId!, 0, 200),
     enabled: !!scanId && scan?.scan_type === "deep" && scan?.status !== "queued",
   });
 
   const { repoStats, tableData } = useMemo(() => {
     if (!scan || !findings) return { repoStats: [], tableData: [] };
     const allFindings = findings.findings ?? [];
+
+    const severityRank = { critical: 0, high: 1, medium: 2, low: 3 };
+
     const repoStats = Object.entries(
       allFindings.reduce(
         (acc, f) => {
-          if (!acc[f.repo_name]) acc[f.repo_name] = { total: 0, critical: 0, verified: 0 };
+          if (!acc[f.repo_name]) {
+            acc[f.repo_name] = { total: 0, maxSeverity: "low", lastCommitDate: null };
+          }
           acc[f.repo_name].total++;
-          if (f.severity === "critical") acc[f.repo_name].critical++;
-          if (f.verified) acc[f.repo_name].verified++;
+
+          // Track highest severity (lower rank = higher severity)
+          if (severityRank[f.severity as keyof typeof severityRank] < severityRank[acc[f.repo_name].maxSeverity]) {
+            acc[f.repo_name].maxSeverity = f.severity as "critical" | "high" | "medium" | "low";
+          }
+
+          // Track latest commit date
+          if (f.commit_date) {
+            if (!acc[f.repo_name].lastCommitDate || new Date(f.commit_date) > new Date(acc[f.repo_name].lastCommitDate!)) {
+              acc[f.repo_name].lastCommitDate = f.commit_date;
+            }
+          }
+
           return acc;
         },
-        {} as Record<string, { total: number; critical: number; verified: number }>
+        {} as Record<string, { total: number; maxSeverity: "critical" | "high" | "medium" | "low"; lastCommitDate: string | null }>
       )
     ).sort(([, a], [, b]) => b.total - a.total);
+    
     const tableData: RepoStat[] = repoStats.map(([repo, stats]) => ({
       repo,
       total: stats.total,
-      critical: stats.critical,
-      verified: stats.verified,
+      maxSeverity: stats.maxSeverity,
+      lastCommitDate: stats.lastCommitDate,
     }));
     return { repoStats, tableData };
   }, [scan, findings]);
