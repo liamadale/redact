@@ -1,8 +1,97 @@
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { SecretTypeChart } from "../components/SecretTypeChart";
 import { TimelineChart } from "../components/TimelineChart";
 import { api } from "../lib/api";
+import {
+  useReactTable,
+  getCoreRowModel,
+  createColumnHelper,
+  flexRender,
+  getSortedRowModel,
+  getFilteredRowModel,
+  type SortingState,
+} from '@tanstack/react-table';
+
+type RepoStat = {
+  repo: string;
+  total: number;
+  critical: number;
+  verified: number;
+};
+
+const columnHelper = createColumnHelper<RepoStat>();
+
+const columns = [
+  columnHelper.accessor('repo', {
+    header: ({ column }) => {
+      const isSorted = column.getIsSorted();
+      return (
+        <button
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          className="flex items-center gap-1 hover:text-tokyo-fg cursor-pointer"
+        >
+          Repository
+          <span className="text-xs">
+            {isSorted === 'asc' ? ' ↑' : isSorted === 'desc' ? ' ↓' : ''}
+          </span>
+        </button>
+      );
+    },
+    cell: info => <span className="font-mono text-xs">{info.getValue()}</span>,
+  }),
+  columnHelper.accessor('total', {
+    header: ({ column }) => {
+      const isSorted = column.getIsSorted();
+      return (
+        <button
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          className="flex items-center gap-1 hover:text-tokyo-fg cursor-pointer"
+        >
+          Findings
+          <span className="text-xs">
+            {isSorted === 'asc' ? ' ↑' : isSorted === 'desc' ? ' ↓' : ''}
+          </span>
+        </button>
+      );
+    },
+  }),
+  columnHelper.accessor('critical', {
+    header: ({ column }) => {
+      const isSorted = column.getIsSorted();
+      return (
+        <button
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          className="flex items-center gap-1 hover:text-tokyo-fg cursor-pointer"
+        >
+          Critical
+          <span className="text-xs">
+            {isSorted === 'asc' ? ' ↑' : isSorted === 'desc' ? ' ↓' : ''}
+          </span>
+        </button>
+      );
+    },
+    cell: info => <span className="text-tokyo-red">{info.getValue() || "—"}</span>,
+  }),
+  columnHelper.accessor('verified', {
+    header: ({ column }) => {
+      const isSorted = column.getIsSorted();
+      return (
+        <button
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          className="flex items-center gap-1 hover:text-tokyo-fg cursor-pointer"
+        >
+          Verified
+          <span className="text-xs">
+            {isSorted === 'asc' ? ' ↑' : isSorted === 'desc' ? ' ↓' : ''}
+          </span>
+        </button>
+      );
+    },
+    cell: info => <span className="text-tokyo-orange">{info.getValue() || "—"}</span>,
+  }),
+];
 
 function StatCard({
   label,
@@ -23,6 +112,8 @@ function StatCard({
 
 export function Dashboard() {
   const { id: scanId } = useParams<{ id: string }>();
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [filterText, setFilterText] = useState('');
 
   const { data: scan } = useQuery({
     queryKey: ["scan", scanId],
@@ -32,9 +123,58 @@ export function Dashboard() {
 
   const { data: findings } = useQuery({
     queryKey: ["findings", scanId],
-    queryFn: () => api.getFindings(scanId!, 0, 200),
+    queryFn: () => {
+      console.log('[Dashboard] Fetching findings for scanId:', scanId);
+      return api.getFindings(scanId!, 0, 200);
+    },
     enabled: !!scanId && scan?.scan_type === "deep" && scan?.status !== "queued",
   });
+
+  const { repoStats, tableData } = useMemo(() => {
+    if (!scan || !findings) return { repoStats: [], tableData: [] };
+    const allFindings = findings.findings ?? [];
+    console.log('[Dashboard] findings data:', findings);
+    console.log('[Dashboard] allFindings:', allFindings);
+    console.log('[Dashboard] allFindings length:', allFindings.length);
+    const repoStats = Object.entries(
+      allFindings.reduce(
+        (acc, f) => {
+          if (!acc[f.repo_name]) acc[f.repo_name] = { total: 0, critical: 0, verified: 0 };
+          acc[f.repo_name].total++;
+          if (f.severity === "critical") acc[f.repo_name].critical++;
+          if (f.verified) acc[f.repo_name].verified++;
+          return acc;
+        },
+        {} as Record<string, { total: number; critical: number; verified: number }>
+      )
+    ).sort(([, a], [, b]) => b.total - a.total);
+    console.log('[Dashboard] repoStats entries:', repoStats);
+    console.log('[Dashboard] repoStats length:', repoStats.length);
+    const tableData: RepoStat[] = repoStats.map(([repo, stats]) => ({
+      repo,
+      total: stats.total,
+      critical: stats.critical,
+      verified: stats.verified,
+    }));
+    console.log('[Dashboard] tableData:', tableData);
+    return { repoStats, tableData };
+  }, [scan, findings]);
+
+  const table = useReactTable({
+    data: tableData,
+    columns,
+    state: {
+      sorting,
+      globalFilter: filterText,
+    },
+    onSortingChange: setSorting,
+    onGlobalFilterChange: setFilterText,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+  });
+
+  console.log('[Dashboard] table rows:', table.getRowModel().rows.length);
 
   if (!scanId || !scan) {
     return (
@@ -51,19 +191,6 @@ export function Dashboard() {
   const criticalCount = allFindings.filter((f) => f.severity === "critical").length;
   const verifiedCount = allFindings.filter((f) => f.verified).length;
   const reposAffected = new Set(allFindings.map((f) => f.repo_name)).size;
-
-  const repoStats = Object.entries(
-    allFindings.reduce(
-      (acc, f) => {
-        if (!acc[f.repo_name]) acc[f.repo_name] = { total: 0, critical: 0, verified: 0 };
-        acc[f.repo_name].total++;
-        if (f.severity === "critical") acc[f.repo_name].critical++;
-        if (f.verified) acc[f.repo_name].verified++;
-        return acc;
-      },
-      {} as Record<string, { total: number; critical: number; verified: number }>
-    )
-  ).sort(([, a], [, b]) => b.total - a.total);
 
   return (
     <div className="min-h-screen p-8 max-w-5xl mx-auto">
@@ -106,27 +233,49 @@ export function Dashboard() {
 
       {/* Repo breakdown table */}
       {repoStats.length > 0 && (
-        <div className="border border-tokyo-border rounded-lg overflow-hidden">
+        <div>
+          <div className="mb-4 flex items-center gap-2">
+            <label htmlFor="repo-filter" className="text-tokyo-comment text-sm">Filter:</label>
+            <input
+              id="repo-filter"
+              type="text"
+              placeholder="Search repositories..."
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              className="px-3 py-2 bg-tokyo-bg border border-tokyo-border rounded text-tokyo-fg text-sm placeholder-tokyo-comment focus:outline-none focus:border-tokyo-blue"
+            />
+          </div>
+          <div className="border border-tokyo-border rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-tokyo-bg-highlight">
-              <tr className="text-tokyo-comment text-left">
-                <th className="px-4 py-3">Repository</th>
-                <th className="px-4 py-3">Findings</th>
-                <th className="px-4 py-3">Critical</th>
-                <th className="px-4 py-3">Verified</th>
-              </tr>
+              {table.getHeaderGroups().map(headerGroup => (
+                <tr key={headerGroup.id} className="text-tokyo-comment text-left">
+                  {headerGroup.headers.map(header => (
+                    <th key={header.id} className="px-4 py-3">
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
+                    </th>
+                  ))}
+                </tr>
+              ))}
             </thead>
             <tbody>
-              {repoStats.map(([repo, stats]) => (
-                <tr key={repo} className="border-t border-tokyo-border text-tokyo-fg">
-                  <td className="px-4 py-3 font-mono text-xs">{repo}</td>
-                  <td className="px-4 py-3">{stats.total}</td>
-                  <td className="px-4 py-3 text-tokyo-red">{stats.critical || "—"}</td>
-                  <td className="px-4 py-3 text-tokyo-orange">{stats.verified || "—"}</td>
+              {table.getRowModel().rows.map(row => (
+                <tr key={row.id} className="border-t border-tokyo-border text-tokyo-fg">
+                  {row.getVisibleCells().map(cell => (
+                    <td key={cell.id} className="px-4 py-3">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
