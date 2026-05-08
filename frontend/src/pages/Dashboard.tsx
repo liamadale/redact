@@ -12,6 +12,7 @@ import {
   getSortedRowModel,
   getFilteredRowModel,
   type SortingState,
+  type Column,
 } from '@tanstack/react-table';
 
 type RepoStat = {
@@ -21,83 +22,52 @@ type RepoStat = {
   lastCommitDate: string | null;
 };
 
+const severityRank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+const severityColors: Record<string, string> = {
+  critical: 'text-tokyo-red',
+  high: 'text-tokyo-orange',
+  medium: 'text-tokyo-yellow',
+  low: 'text-tokyo-fg',
+};
+
+function SortableHeader({ column, label }: { column: Column<RepoStat>; label: string }) {
+  const isSorted = column.getIsSorted();
+  return (
+    <button
+      onClick={() => column.toggleSorting(isSorted === 'asc')}
+      className="flex items-center gap-1 hover:text-tokyo-fg cursor-pointer"
+      aria-label={`Sort by ${label}`}
+    >
+      {label}
+      <span className="text-xs">
+        {isSorted === 'asc' ? ' ↑' : isSorted === 'desc' ? ' ↓' : ''}
+      </span>
+    </button>
+  );
+}
+
 const columnHelper = createColumnHelper<RepoStat>();
 
 const columns = [
   columnHelper.accessor('repo', {
-    header: ({ column }) => {
-      const isSorted = column.getIsSorted();
-      return (
-        <button
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="flex items-center gap-1 hover:text-tokyo-fg cursor-pointer"
-        >
-          Repository
-          <span className="text-xs">
-            {isSorted === 'asc' ? ' ↑' : isSorted === 'desc' ? ' ↓' : ''}
-          </span>
-        </button>
-      );
-    },
+    header: ({ column }) => <SortableHeader column={column} label="Repository" />,
     cell: info => <span className="font-mono text-xs">{info.getValue()}</span>,
   }),
   columnHelper.accessor('total', {
-    header: ({ column }) => {
-      const isSorted = column.getIsSorted();
-      return (
-        <button
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="flex items-center gap-1 hover:text-tokyo-fg cursor-pointer"
-        >
-          Findings
-          <span className="text-xs">
-            {isSorted === 'asc' ? ' ↑' : isSorted === 'desc' ? ' ↓' : ''}
-          </span>
-        </button>
-      );
-    },
+    header: ({ column }) => <SortableHeader column={column} label="Findings" />,
   }),
   columnHelper.accessor('maxSeverity', {
-    header: ({ column }) => {
-      const isSorted = column.getIsSorted();
-      return (
-        <button
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="flex items-center gap-1 hover:text-tokyo-fg cursor-pointer"
-        >
-          Max Severity
-          <span className="text-xs">
-            {isSorted === 'asc' ? ' ↑' : isSorted === 'desc' ? ' ↓' : ''}
-          </span>
-        </button>
-      );
-    },
+    header: ({ column }) => <SortableHeader column={column} label="Max Severity" />,
+    sortingFn: (rowA, rowB) =>
+      severityRank[rowA.original.maxSeverity] - severityRank[rowB.original.maxSeverity],
     cell: info => {
       const severity = info.getValue();
-      const severityColors: Record<string, string> = {
-        critical: 'text-tokyo-red',
-        high: 'text-tokyo-orange',
-        medium: 'text-tokyo-yellow',
-        low: 'text-tokyo-fg',
-      };
       return <span className={`capitalize ${severityColors[severity] || 'text-tokyo-fg'}`}>{severity}</span>;
     },
   }),
   columnHelper.accessor('lastCommitDate', {
-    header: ({ column }) => {
-      const isSorted = column.getIsSorted();
-      return (
-        <button
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="flex items-center gap-1 hover:text-tokyo-fg cursor-pointer"
-        >
-          Last Commit
-          <span className="text-xs">
-            {isSorted === 'asc' ? ' ↑' : isSorted === 'desc' ? ' ↓' : ''}
-          </span>
-        </button>
-      );
-    },
+    header: ({ column }) => <SortableHeader column={column} label="Last Commit" />,
     cell: info => {
       const date = info.getValue();
       if (!date) return <span className="text-tokyo-comment">—</span>;
@@ -140,46 +110,38 @@ export function Dashboard() {
     enabled: !!scanId && scan?.scan_type === "deep" && scan?.status !== "queued",
   });
 
-  const { repoStats, tableData } = useMemo(() => {
-    if (!scan || !findings) return { repoStats: [], tableData: [] };
-    const allFindings = findings.findings ?? [];
+  const allFindings = useMemo(() => findings?.findings ?? [], [findings]);
 
-    const severityRank = { critical: 0, high: 1, medium: 2, low: 3 };
+  const tableData = useMemo(() => {
+    if (!allFindings.length) return [];
 
-    const repoStats = Object.entries(
-      allFindings.reduce(
-        (acc, f) => {
-          if (!acc[f.repo_name]) {
-            acc[f.repo_name] = { total: 0, maxSeverity: "low", lastCommitDate: null };
-          }
-          acc[f.repo_name].total++;
+    const repoMap: Record<string, { total: number; maxSeverity: "critical" | "high" | "medium" | "low"; lastCommitDate: string | null }> = {};
 
-          // Track highest severity (lower rank = higher severity)
-          if (severityRank[f.severity as keyof typeof severityRank] < severityRank[acc[f.repo_name].maxSeverity]) {
-            acc[f.repo_name].maxSeverity = f.severity as "critical" | "high" | "medium" | "low";
-          }
+    for (const f of allFindings) {
+      if (!repoMap[f.repo_name]) {
+        repoMap[f.repo_name] = { total: 0, maxSeverity: "low", lastCommitDate: null };
+      }
+      const entry = repoMap[f.repo_name];
+      entry.total++;
 
-          // Track latest commit date
-          if (f.commit_date) {
-            if (!acc[f.repo_name].lastCommitDate || new Date(f.commit_date) > new Date(acc[f.repo_name].lastCommitDate!)) {
-              acc[f.repo_name].lastCommitDate = f.commit_date;
-            }
-          }
+      if (severityRank[f.severity] < severityRank[entry.maxSeverity]) {
+        entry.maxSeverity = f.severity;
+      }
 
-          return acc;
-        },
-        {} as Record<string, { total: number; maxSeverity: "critical" | "high" | "medium" | "low"; lastCommitDate: string | null }>
-      )
-    ).sort(([, a], [, b]) => b.total - a.total);
-    
-    const tableData: RepoStat[] = repoStats.map(([repo, stats]) => ({
-      repo,
-      total: stats.total,
-      maxSeverity: stats.maxSeverity,
-      lastCommitDate: stats.lastCommitDate,
-    }));
-    return { repoStats, tableData };
-  }, [scan, findings]);
+      if (f.commit_date && (!entry.lastCommitDate || f.commit_date > entry.lastCommitDate)) {
+        entry.lastCommitDate = f.commit_date;
+      }
+    }
+
+    return Object.entries(repoMap)
+      .sort(([, a], [, b]) => b.total - a.total)
+      .map(([repo, stats]): RepoStat => ({
+        repo,
+        total: stats.total,
+        maxSeverity: stats.maxSeverity,
+        lastCommitDate: stats.lastCommitDate,
+      }));
+  }, [allFindings]);
 
   const table = useReactTable({
     data: tableData,
@@ -206,7 +168,6 @@ export function Dashboard() {
     );
   }
 
-  const allFindings = findings?.findings ?? [];
   const criticalCount = allFindings.filter((f) => f.severity === "critical").length;
   const verifiedCount = allFindings.filter((f) => f.verified).length;
   const reposAffected = new Set(allFindings.map((f) => f.repo_name)).size;
@@ -251,7 +212,7 @@ export function Dashboard() {
       )}
 
       {/* Repo breakdown table */}
-      {repoStats.length > 0 && (
+      {tableData.length > 0 && (
         <div>
           <div className="mb-4 flex items-center gap-2">
             <label htmlFor="repo-filter" className="text-tokyo-comment text-sm">Filter:</label>
@@ -265,35 +226,42 @@ export function Dashboard() {
             />
           </div>
           <div className="border border-tokyo-border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-tokyo-bg-highlight">
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id} className="text-tokyo-comment text-left">
-                  {headerGroup.headers.map(header => (
-                    <th key={header.id} className="px-4 py-3">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map(row => (
-                <tr key={row.id} className="border-t border-tokyo-border text-tokyo-fg">
-                  {row.getVisibleCells().map(cell => (
-                    <td key={cell.id} className="px-4 py-3">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            <table className="w-full text-sm">
+              <thead className="bg-tokyo-bg-highlight">
+                {table.getHeaderGroups().map(headerGroup => (
+                  <tr key={headerGroup.id} className="text-tokyo-comment text-left">
+                    {headerGroup.headers.map(header => {
+                      const sortDir = header.column.getIsSorted();
+                      return (
+                        <th
+                          key={header.id}
+                          className="px-4 py-3"
+                          aria-sort={sortDir === 'asc' ? 'ascending' : sortDir === 'desc' ? 'descending' : 'none'}
+                        >
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {table.getRowModel().rows.map(row => (
+                  <tr key={row.id} className="border-t border-tokyo-border text-tokyo-fg">
+                    {row.getVisibleCells().map(cell => (
+                      <td key={cell.id} className="px-4 py-3">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
