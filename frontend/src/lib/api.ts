@@ -54,4 +54,13 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
     return res.blob();
   },
+
+  pauseScan: (id: string) =>
+    request<{ status: string }>(`/scans/${id}/pause`, { method: "POST" }),
+
+  resumeScan: (id: string) =>
+    request<{ status: string }>(`/scans/${id}/resume`, { method: "POST" }),
+
+  cancelScan: (id: string) =>
+    request<{ status: string }>(`/scans/${id}/cancel`, { method: "POST" }),
 };

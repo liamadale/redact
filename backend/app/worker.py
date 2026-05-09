@@ -34,13 +34,15 @@ def cleanup_orphaned_scans(**kwargs: object) -> None:
         logger.info("Cleaned up orphaned scan directories")
 
 
+_redis_pool = __import__("redis").ConnectionPool.from_url(REDIS_URL)
+
+
 def _publish_progress(scan_id: str, data: dict) -> None:
     """Publish scan progress to Redis pub/sub channel."""
     import redis
 
-    r = redis.Redis.from_url(REDIS_URL)
+    r = redis.Redis(connection_pool=_redis_pool)
     r.publish(f"scan:{scan_id}", json.dumps(data))
-    r.close()
 
 
 @app.task(name="redact.quick_scan")
@@ -102,7 +104,7 @@ def task_deep_scan(
                 finally:
                     await adapter.close()
                 return [
-                    {"full_name": r.full_name, "clone_url": r.clone_url}
+                    {"full_name": r.full_name, "clone_url": r.clone_url, "is_private": r.is_private}
                     for r in result
                 ]
 

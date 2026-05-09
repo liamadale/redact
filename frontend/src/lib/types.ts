@@ -5,7 +5,7 @@ export interface Scan {
   target_type: string;
   target_name: string;
   scan_type: "quick" | "deep";
-  status: "queued" | "running" | "completed" | "partial" | "failed";
+  status: "queued" | "running" | "completed" | "partial" | "failed" | "paused" | "cancelled";
   repos_total: number;
   repos_scanned: number;
   current_repo: string | null;
@@ -58,7 +58,7 @@ export interface ScanSummary {
   target_type: string;
   target_name: string;
   scan_type: "quick" | "deep";
-  status: "queued" | "running" | "completed" | "partial" | "failed";
+  status: "queued" | "running" | "completed" | "partial" | "failed" | "paused" | "cancelled";
   repos_total: number;
   repos_scanned: number;
   created_at: string | null;

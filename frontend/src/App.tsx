@@ -1,12 +1,14 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Link, useLocation, matchPath } from "react-router-dom";
-import { Dashboard } from "./pages/Dashboard";
-import { FindingDetail } from "./pages/FindingDetail";
+import { lazy, Suspense } from "react";
 import { Landing } from "./pages/Landing";
-import { Metrics } from "./pages/Metrics";
-import { Report } from "./pages/Report";
 import { ScanView } from "./pages/ScanView";
 import { api } from "./lib/api";
+
+const Dashboard = lazy(() => import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })));
+const FindingDetail = lazy(() => import("./pages/FindingDetail").then((m) => ({ default: m.FindingDetail })));
+const Metrics = lazy(() => import("./pages/Metrics").then((m) => ({ default: m.Metrics })));
+const Report = lazy(() => import("./pages/Report").then((m) => ({ default: m.Report })));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000 } },
@@ -134,6 +136,7 @@ function App() {
       <BrowserRouter>
         <Nav />
         <div className="pt-14">
+          <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><span className="text-tokyo-comment text-sm font-mono">Loading...</span></div>}>
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/scans/:id" element={<ScanView />} />
@@ -142,6 +145,7 @@ function App() {
             <Route path="/dashboard/:id" element={<Dashboard />} />
             <Route path="/metrics/:id" element={<Metrics />} />
           </Routes>
+          </Suspense>
         </div>
       </BrowserRouter>
     </QueryClientProvider>
