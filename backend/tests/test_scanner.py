@@ -183,3 +183,36 @@ def test_run_trufflehog_uses_bare_flag():
         cmd = mock_popen.call_args[0][0]
         assert "--bare" in cmd
         assert "--all-branches" not in cmd
+
+
+def test_clone_repo_uses_basic_auth_not_bearer():
+    """Regression: GitHub git HTTP transport requires Basic auth, not Bearer.
+
+    Classic PATs (ghp_*) must be sent as:
+      Authorization: Basic base64("x-access-token:{token}")
+    Using 'Bearer {token}' causes HTTP 401 → git exit code 128.
+    """
+    import base64
+    from pathlib import Path
+
+    from app.scanning.deep_scan import _clone_repo
+
+    with patch("app.scanning.deep_scan.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+
+        _clone_repo(
+            "https://github.com/org/repo.git",
+            Path("/tmp/test-dest"),
+            token="ghp_testtoken123",
+        )
+
+        cmd = mock_run.call_args[0][0]
+        header_arg = cmd[2]  # the http.extraHeader=... value
+
+        assert "Bearer" not in header_arg
+        assert "Authorization: Basic " in header_arg
+
+        # Verify the base64 payload decodes to x-access-token:{token}
+        b64_value = header_arg.split("Basic ")[1]
+        decoded = base64.b64decode(b64_value).decode()
+        assert decoded == "x-access-token:ghp_testtoken123"

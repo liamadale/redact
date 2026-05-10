@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import logging
@@ -156,8 +157,12 @@ def _parse_finding(raw: dict, repo_name: str) -> dict:
 
 def _clone_repo(clone_url: str, dest: Path, token: str | None = None) -> None:
     if token and "github.com" in clone_url:
+        credentials = base64.b64encode(
+            f"x-access-token:{token}".encode()
+        ).decode()
         cmd = [
-            "git", "-c", f"http.extraHeader=Authorization: Bearer {token}",
+            "git", "-c",
+            f"http.extraHeader=Authorization: Basic {credentials}",
             "clone", "--mirror", clone_url, str(dest),
         ]
     else:
