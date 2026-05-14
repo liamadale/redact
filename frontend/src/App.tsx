@@ -25,8 +25,10 @@ import { Dashboard } from "./pages/Dashboard";
 import { FindingDetail } from "./pages/FindingDetail";
 import { Landing } from "./pages/Landing";
 import { Metrics } from "./pages/Metrics";
+import { NotFound } from "./pages/NotFound";
 import { Report } from "./pages/Report";
 import { ScanView } from "./pages/ScanView";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { api } from "./lib/api";
 
 const queryClient = new QueryClient({
@@ -156,14 +158,17 @@ function App() {
       <BrowserRouter>
         <Nav />
         <div className="pt-14">
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/scans/:id" element={<ScanView />} />
-            <Route path="/scans/:scanId/findings/:findingId" element={<FindingDetail />} />
-            <Route path="/scans/:scanId/report" element={<Report />} />
-            <Route path="/dashboard/:id" element={<Dashboard />} />
-            <Route path="/metrics/:id" element={<Metrics />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route path="/scans/:id" element={<ScanView />} />
+              <Route path="/scans/:scanId/findings/:findingId" element={<FindingDetail />} />
+              <Route path="/scans/:scanId/report" element={<Report />} />
+              <Route path="/dashboard/:id" element={<Dashboard />} />
+              <Route path="/metrics/:id" element={<Metrics />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </ErrorBoundary>
         </div>
       </BrowserRouter>
     </QueryClientProvider>
