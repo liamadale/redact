@@ -55,6 +55,8 @@ class ScanResponse(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     created_at: datetime | None
+    warning: str | None = None
+    scan_warnings: list[str] = []
 
     model_config = {"from_attributes": True}
 

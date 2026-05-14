@@ -136,7 +136,10 @@ async def create_scan(body: ScanCreate, db: Session = Depends(get_db)):
             allow_private=body.allow_private,
         )
 
-    return scan
+    response = ScanResponse.model_validate(scan)
+    if not token:
+        response.warning = "No GitHub token — unauthenticated rate limits apply (60 req/h)"
+    return response
 
 
 @app.get("/scans/{scan_id}", response_model=ScanResponse)

@@ -72,7 +72,7 @@ class GitHubAdapter(PlatformAdapter):
             page += 1
         return repos
 
-    async def search_code(self, org: str, patterns: list[str]) -> list[SearchHit]:
+    async def search_code(self, org: str, patterns: list[str], on_warning=None) -> list[SearchHit]:
         hits: list[SearchHit] = []
         seen = set()
 
@@ -86,6 +86,8 @@ class GitHubAdapter(PlatformAdapter):
                 )
                 if resp.status_code == 403:
                     logger.warning("Rate limited on search, sleeping 60s — retrying pattern %s", pattern)
+                    if on_warning:
+                        on_warning(f"Rate limited by GitHub — pattern '{pattern}' may have incomplete results")
                     await asyncio.sleep(60)
                     resp = await self._client.get(
                         "/search/code",
@@ -94,6 +96,8 @@ class GitHubAdapter(PlatformAdapter):
                     )
                     if resp.status_code != 200:
                         logger.warning("Retry failed for pattern %s (status %s)", pattern, resp.status_code)
+                        if on_warning:
+                            on_warning(f"Rate limited by GitHub — results for pattern '{pattern}' are incomplete")
                         continue
                 if resp.status_code == 422:
                     logger.warning("Search query rejected: %s", query)

@@ -4,7 +4,8 @@ import os
 import shutil
 import uuid
 
-import redis
+import httpx
+import redis as redis_lib
 
 from celery import Celery
 from celery.signals import worker_ready
@@ -36,13 +37,28 @@ def cleanup_orphaned_scans(**kwargs: object) -> None:
         logger.info("Cleaned up orphaned scan directories")
 
 
-_redis_pool = redis.ConnectionPool.from_url(REDIS_URL)
+_redis_pool = redis_lib.ConnectionPool.from_url(REDIS_URL)
 
 
 def _publish_progress(scan_id: str, data: dict) -> None:
     """Publish scan progress to Redis pub/sub channel."""
-    r = redis.Redis(connection_pool=_redis_pool)
+    r = redis_lib.Redis(connection_pool=_redis_pool)
     r.publish(f"scan:{scan_id}", json.dumps(data))
+
+
+def _friendly_error(e: Exception) -> str:
+    if isinstance(e, httpx.ConnectError):
+        return "Could not connect to GitHub API — check network connectivity"
+    if isinstance(e, httpx.HTTPStatusError):
+        status = e.response.status_code
+        if status == 401:
+            return "GitHub token is invalid or expired"
+        if status == 403:
+            return "GitHub API access denied — check token permissions"
+        return f"GitHub API returned error {status}"
+    if isinstance(e, redis_lib.ConnectionError):
+        return "Internal service error — please retry"
+    return f"Scan failed: {type(e).__name__}"
 
 
 @app.task(name="redact.quick_scan")
@@ -55,11 +71,14 @@ def task_quick_scan(scan_id: str, target: str, session_id: str, allow_private: b
     token = get_token(session_id) or os.environ.get("GITHUB_TOKEN")
     db = SessionLocal()
     try:
-        asyncio.run(run_quick_scan(uuid.UUID(scan_id), target, token, db, allow_private=allow_private))
+        def on_warning(msg: str) -> None:
+            _publish_progress(scan_id, {"event": "warning", "message": msg})
+
+        asyncio.run(run_quick_scan(uuid.UUID(scan_id), target, token, db, allow_private=allow_private, on_warning=on_warning))
         _publish_progress(scan_id, {"event": "complete", "scan_type": "quick"})
     except Exception as e:
         logger.error("Quick scan task failed: %s", e)
-        _publish_progress(scan_id, {"event": "failed", "error": str(e)})
+        _publish_progress(scan_id, {"event": "failed", "error": _friendly_error(e)})
         raise
     finally:
         db.close()
@@ -108,7 +127,24 @@ def task_deep_scan(
                     for r in result
                 ]
 
-            repos = asyncio.run(_list())
+            try:
+                repos = asyncio.run(_list())
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code
+                if status_code == 401:
+                    msg = "GitHub token is invalid or expired"
+                elif status_code == 403:
+                    msg = "GitHub token lacks permission to access this organization"
+                elif status_code == 404:
+                    msg = f"Organization or user not found: {target_name}"
+                else:
+                    msg = f"GitHub API error: {status_code}"
+                scan = db.query(Scan).filter(Scan.id == uuid.UUID(scan_id)).first()
+                if scan:
+                    scan.status = "failed"
+                    db.commit()
+                _publish_progress(scan_id, {"event": "failed", "error": msg})
+                return
 
         if not repos:
             scan = db.query(Scan).filter(Scan.id == uuid.UUID(scan_id)).first()
@@ -132,7 +168,7 @@ def task_deep_scan(
         _publish_progress(scan_id, {"event": "complete", "scan_type": "deep"})
     except Exception as e:
         logger.error("Deep scan task failed: %s", e)
-        _publish_progress(scan_id, {"event": "failed", "error": str(e)})
+        _publish_progress(scan_id, {"event": "failed", "error": _friendly_error(e)})
         raise
     finally:
         db.close()

@@ -34,6 +34,7 @@ class Scan(Base):
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
     created_at = Column(DateTime, server_default=func.now())
+    scan_warnings = Column(JSON, default=list)
 
     __table_args__ = (Index("idx_scans_session", "session_id"),)
 

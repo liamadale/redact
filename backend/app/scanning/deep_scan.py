@@ -207,6 +207,11 @@ def run_deep_scan(
                 _clone_repo(clone_url, repo_dir, token)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                 logger.error("Failed to clone %s: %s", repo_name, e)
+                warn_msg = "Clone failed — check repository access permissions"
+                if on_progress:
+                    on_progress({"event": "repo_skipped", "repo": repo_name, "reason": warn_msg})
+                scan.scan_warnings = list(scan.scan_warnings or []) + [f"{repo_name}: {warn_msg}"]
+                db.commit()
                 continue
 
             def on_finding(raw_finding):
@@ -227,6 +232,11 @@ def run_deep_scan(
             if did_timeout:
                 any_timeout = True
                 logger.warning("TruffleHog timed out on %s", repo_name)
+                timeout_msg = f"Scan timed out after {timeout}s — results may be incomplete"
+                if on_progress:
+                    on_progress({"event": "repo_timeout", "repo": repo_name, "reason": timeout_msg})
+                scan.scan_warnings = list(scan.scan_warnings or []) + [f"{repo_name}: {timeout_msg}"]
+                db.commit()
 
             # Cleanup clone immediately
             shutil.rmtree(repo_dir, ignore_errors=True)
