@@ -1,8 +1,8 @@
 import hashlib
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
-
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -24,6 +24,8 @@ from app.schemas.scans import (
 )
 from app.session import store_token
 from app.worker import task_deep_scan, task_quick_scan
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Redact", version="0.1.0")
 
@@ -163,11 +165,12 @@ async def stream_scan(scan_id: uuid.UUID, db: Session = Depends(get_db)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
 
-    terminal_status = scan.status in ("completed", "failed")
-
     async def event_generator():
-        if terminal_status:
-            payload = json.dumps({"event": scan.status, "scan_id": str(scan_id)})
+        # Re-fetch status inside the generator to avoid a race between the
+        # route-entry check and the moment the stream actually starts.
+        current_scan = db.query(Scan).filter(Scan.id == scan_id).first()
+        if current_scan and current_scan.status in ("completed", "failed"):
+            payload = json.dumps({"event": current_scan.status, "scan_id": str(scan_id)})
             yield f"data: {payload}\n\n"
             return
 
@@ -184,7 +187,11 @@ async def stream_scan(scan_id: uuid.UUID, db: Session = Depends(get_db)):
                     if isinstance(data, bytes):
                         data = data.decode()
                     yield f"data: {data}\n\n"
-                    parsed = json.loads(data)
+                    try:
+                        parsed = json.loads(data)
+                    except json.JSONDecodeError:
+                        logger.warning("SSE: malformed JSON from Redis, skipping: %r", data)
+                        continue
                     if parsed.get("event") in ("complete", "failed"):
                         break
                 else:

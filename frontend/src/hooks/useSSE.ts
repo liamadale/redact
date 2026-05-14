@@ -3,6 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useScanStore } from "../stores/scanStore";
 import { api } from "../lib/api";
 
+const MAX_POLL_FAILURES = 5;
+
 const FINDINGS_INVALIDATE_INTERVAL = 5000;
 
 export function useSSE(scanId: string | null) {
@@ -13,9 +15,15 @@ export function useSSE(scanId: string | null) {
   const lastFindingsInvalidate = useRef(0);
   const prevScanId = useRef<string | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Refs for mutable polling state to avoid stale closures in setInterval callbacks
+  const pollFailureCount = useRef(0);
+  const scanIdRef = useRef<string | null>(scanId);
 
   useEffect(() => {
     if (!scanId) return;
+
+    scanIdRef.current = scanId;
+    pollFailureCount.current = 0;
 
     if (prevScanId.current !== scanId) {
       clearLogs();
@@ -24,7 +32,8 @@ export function useSSE(scanId: string | null) {
     }
 
     const flushAndFinish = (message: string, level: "success" | "warn" = "success") => {
-      queryClient.invalidateQueries({ queryKey: ["findings", scanId] });
+      // exact: false catches all sub-keys (["findings", id], ["findings", id, "report"], etc.)
+      queryClient.invalidateQueries({ queryKey: ["findings"], exact: false });
       queryClient.invalidateQueries({ queryKey: ["hits", scanId] });
       lastFindingsInvalidate.current = Date.now();
       addLog({ level, prefix: "DONE", message });
@@ -44,7 +53,7 @@ export function useSSE(scanId: string | null) {
       // Findings/hits are large payloads — throttle to once per 5s
       const now = Date.now();
       if (now - lastFindingsInvalidate.current >= FINDINGS_INVALIDATE_INTERVAL) {
-        queryClient.invalidateQueries({ queryKey: ["findings", scanId] });
+        queryClient.invalidateQueries({ queryKey: ["findings"], exact: false });
         queryClient.invalidateQueries({ queryKey: ["hits", scanId] });
         lastFindingsInvalidate.current = now;
       }
@@ -133,9 +142,15 @@ export function useSSE(scanId: string | null) {
       });
 
       pollingIntervalRef.current = setInterval(async () => {
+        // Use ref so this callback always reads the current scanId even if the
+        // component re-renders during an active polling cycle (stale closure fix).
+        const currentScanId = scanIdRef.current;
+        if (!currentScanId) return;
+
         try {
-          const scan = await api.getScan(scanId);
-          queryClient.invalidateQueries({ queryKey: ["scan", scanId] });
+          const scan = await api.getScan(currentScanId);
+          pollFailureCount.current = 0;
+          queryClient.invalidateQueries({ queryKey: ["scan", currentScanId] });
           if (["completed", "failed", "partial"].includes(scan.status)) {
             if (pollingIntervalRef.current) {
               clearInterval(pollingIntervalRef.current);
@@ -147,7 +162,19 @@ export function useSSE(scanId: string | null) {
             );
           }
         } catch {
-          // Network still down — keep polling silently
+          pollFailureCount.current += 1;
+          if (pollFailureCount.current >= MAX_POLL_FAILURES) {
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
+            }
+            addLog({
+              level: "error",
+              prefix: "WARN",
+              message: `polling stopped after ${MAX_POLL_FAILURES} consecutive failures`,
+            });
+            setConnectionStatus("disconnected");
+          }
         }
       }, 5000);
     };

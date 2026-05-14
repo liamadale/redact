@@ -43,7 +43,10 @@ _redis_pool = redis_lib.ConnectionPool.from_url(REDIS_URL)
 def _publish_progress(scan_id: str, data: dict) -> None:
     """Publish scan progress to Redis pub/sub channel."""
     r = redis_lib.Redis(connection_pool=_redis_pool)
-    r.publish(f"scan:{scan_id}", json.dumps(data))
+    try:
+        r.publish(f"scan:{scan_id}", json.dumps(data))
+    finally:
+        r.close()
 
 
 def _friendly_error(e: Exception) -> str:
