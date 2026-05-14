@@ -4,7 +4,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 
 from app.models.models import Finding, Scan
-from app.reports.compliance import get_controls_for_secret_type
+from app.reports.compliance import get_controls_for_secret_types
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -17,10 +17,14 @@ def generate_pdf_report(scan: Scan, findings: list[Finding], db: Session) -> byt
     )
     template = env.get_template("report.html")
 
+    controls_by_type = get_controls_for_secret_types(
+        db, {f.secret_type for f in findings}
+    )
+
     enriched = []
     all_controls: dict[str, dict] = {}
     for f in findings:
-        controls = get_controls_for_secret_type(db, f.secret_type)
+        controls = controls_by_type.get(f.secret_type, [])
         enriched.append({"finding": f, "controls": controls})
         for c in controls:
             key = f"{c.framework}:{c.control_id}"

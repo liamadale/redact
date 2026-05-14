@@ -61,6 +61,8 @@ async def run_quick_scan(
         if accumulated_warnings:
             scan.scan_warnings = list(scan.scan_warnings or []) + accumulated_warnings
 
+        batch_size = 100
+        batch_count = 0
         for hit in hits:
             if hit.repo.is_private and not allow_private:
                 continue
@@ -77,6 +79,9 @@ async def run_quick_scan(
                 html_url=hit.html_url,
             )
             db.add(db_hit)
+            batch_count += 1
+            if batch_count % batch_size == 0:
+                db.flush()
 
         scan.status = "completed"
         scan.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)

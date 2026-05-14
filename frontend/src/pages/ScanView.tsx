@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { useSSE } from "../hooks/useSSE";
@@ -324,6 +324,10 @@ export function ScanView() {
     if (autoScroll) logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs, autoScroll]);
 
+  const filteredLogs = useMemo(() => filterLogs(logs, logFilter), [logs, logFilter]);
+  const warnCount    = useMemo(() => logs.filter((l) => l.level === "warn").length, [logs]);
+  const errorCount   = useMemo(() => logs.filter((l) => l.level === "error").length, [logs]);
+
   if (!scan) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -339,9 +343,6 @@ export function ScanView() {
   const isDone      = ["completed", "partial", "failed"].includes(scan.status);
   const pct         = scan.repos_total > 0 ? Math.round((scan.repos_scanned / scan.repos_total) * 100) : null;
   const allFindings = findings?.findings ?? [];
-  const filteredLogs = filterLogs(logs, logFilter);
-  const warnCount    = logs.filter((l) => l.level === "warn").length;
-  const errorCount   = logs.filter((l) => l.level === "error").length;
 
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col bg-tokyo-bg overflow-hidden">

@@ -68,6 +68,8 @@ class Finding(Base):
     __table_args__ = (
         UniqueConstraint("scan_id", "dedup_hash", name="uq_findings_dedup"),
         Index("idx_findings_scan_id", "scan_id"),
+        Index("idx_findings_severity", "severity"),
+        Index("idx_findings_repo_name", "repo_name"),
     )
 
 

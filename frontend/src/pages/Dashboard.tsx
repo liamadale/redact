@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { SecretTypeChart } from "../components/SecretTypeChart";
@@ -36,6 +37,28 @@ export function Dashboard() {
     enabled: !!scanId && scan?.scan_type === "deep" && scan?.status !== "queued",
   });
 
+  const allFindings = useMemo(() => findings?.findings ?? [], [findings?.findings]);
+  const criticalCount = allFindings.filter((f) => f.severity === "critical").length;
+  const verifiedCount = allFindings.filter((f) => f.verified).length;
+  const reposAffected = new Set(allFindings.map((f) => f.repo_name)).size;
+
+  const repoStats = useMemo(
+    () =>
+      Object.entries(
+        allFindings.reduce(
+          (acc, f) => {
+            if (!acc[f.repo_name]) acc[f.repo_name] = { total: 0, critical: 0, verified: 0 };
+            acc[f.repo_name].total++;
+            if (f.severity === "critical") acc[f.repo_name].critical++;
+            if (f.verified) acc[f.repo_name].verified++;
+            return acc;
+          },
+          {} as Record<string, { total: number; critical: number; verified: number }>
+        )
+      ).sort(([, a], [, b]) => b.total - a.total),
+    [allFindings]
+  );
+
   if (!scanId || !scan) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8">
@@ -46,24 +69,6 @@ export function Dashboard() {
       </div>
     );
   }
-
-  const allFindings = findings?.findings ?? [];
-  const criticalCount = allFindings.filter((f) => f.severity === "critical").length;
-  const verifiedCount = allFindings.filter((f) => f.verified).length;
-  const reposAffected = new Set(allFindings.map((f) => f.repo_name)).size;
-
-  const repoStats = Object.entries(
-    allFindings.reduce(
-      (acc, f) => {
-        if (!acc[f.repo_name]) acc[f.repo_name] = { total: 0, critical: 0, verified: 0 };
-        acc[f.repo_name].total++;
-        if (f.severity === "critical") acc[f.repo_name].critical++;
-        if (f.verified) acc[f.repo_name].verified++;
-        return acc;
-      },
-      {} as Record<string, { total: number; critical: number; verified: number }>
-    )
-  ).sort(([, a], [, b]) => b.total - a.total);
 
   return (
     <div className="min-h-screen p-8 max-w-5xl mx-auto">
