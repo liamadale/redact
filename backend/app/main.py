@@ -296,9 +296,11 @@ async def get_report(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    import asyncio  # noqa: PLC0415
+
     from app.reports.pdf import generate_pdf_report  # noqa: PLC0415
 
-    pdf_bytes = generate_pdf_report(scan, findings, db)
+    pdf_bytes = await asyncio.to_thread(generate_pdf_report, scan, findings, db)
     filename = f"redact-report-{scan.target_name}-{scan.id}.pdf"
     return StreamingResponse(
         iter([pdf_bytes]),
