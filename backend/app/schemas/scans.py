@@ -44,7 +44,6 @@ class ScanCreate(BaseModel):
 
 class ScanResponse(BaseModel):
     id: uuid.UUID
-    session_id: str
     platform: str
     target_type: str
     target_name: str

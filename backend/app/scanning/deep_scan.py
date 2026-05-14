@@ -180,6 +180,8 @@ def run_deep_scan(
 ) -> None:
     """Run deep scan on a list of repos. Each repo dict has 'full_name' and 'clone_url'."""
     scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise ValueError(f"Scan {scan_id} not found")
     scan.status = "running"
     scan.repos_total = len(repos)
     db.commit()
@@ -246,8 +248,12 @@ def run_deep_scan(
         raise
     finally:
         shutil.rmtree(scan_dir, ignore_errors=True)
-        scan.current_repo = None
-        db.commit()
+        try:
+            scan.current_repo = None
+            db.commit()
+        except Exception:
+            logger.error("Failed to clear current_repo for scan %s", scan_id)
+            db.rollback()
 
 
 def _upsert_finding(scan_id: uuid.UUID, parsed: dict, db: Session) -> None:

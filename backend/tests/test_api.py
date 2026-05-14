@@ -265,6 +265,23 @@ def test_valid_repo_format(client):
         assert resp.status_code == 201
 
 
+@patch("app.main.store_token")
+@patch("app.main.task_quick_scan")
+def test_scan_response_does_not_expose_session_id(mock_task, mock_store, client):
+    """Fix 1.8: session_id is an internal field and must not appear in ScanResponse."""
+    mock_task.delay = lambda *a, **kw: None
+    resp = client.post(
+        "/scans",
+        json={
+            "target_type": "org",
+            "target_name": "test-org",
+            "scan_type": "quick",
+        },
+    )
+    assert resp.status_code == 201
+    assert "session_id" not in resp.json()
+
+
 def test_empty_target_name(client):
     resp = client.post(
         "/scans",
