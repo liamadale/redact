@@ -274,7 +274,7 @@ async def get_finding(
 @app.get("/scans/{scan_id}/report")
 async def get_report(
     scan_id: uuid.UUID,
-    format: Literal["pdf", "json"] = Query("pdf"),
+    report_format: Literal["pdf", "json"] = Query("pdf", alias="format"),
     severity: list[str] | None = Query(None),
     repo: list[str] | None = Query(None),
     db: Session = Depends(get_db),
@@ -290,7 +290,7 @@ async def get_report(
         query = query.filter(Finding.repo_name.in_(repo))
     findings = query.order_by(Finding.severity, Finding.repo_name).all()
 
-    if format == "json":
+    if report_format == "json":
         import json
 
         payload = {

@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 import respx
 from httpx import Response
@@ -207,3 +209,83 @@ async def test_search_code_handles_401_unauthorized(mock_api):
 
     # Should not crash — returns empty results
     assert hits == []
+
+
+@pytest.mark.asyncio
+async def test_search_code_retries_after_rate_limit(mock_api):
+    """Rate-limited pattern should be retried once after sleeping."""
+    mock_api.get("/search/code").mock(
+        side_effect=[
+            Response(403),  # rate limited
+            Response(  # retry succeeds
+                200,
+                json={
+                    "items": [
+                        {
+                            "path": "config.py",
+                            "html_url": "https://github.com/org/repo/blob/main/config.py",
+                            "repository": {
+                                "name": "repo",
+                                "full_name": "org/repo",
+                                "clone_url": "https://github.com/org/repo.git",
+                                "default_branch": "main",
+                                "size": 100,
+                                "private": False,
+                                "pushed_at": "2026-01-01T00:00:00Z",
+                            },
+                            "text_matches": [{"fragment": "AKIAIOSFODNN7EXAMPLE"}],
+                        }
+                    ]
+                },
+            ),
+        ]
+    )
+
+    with patch("app.adapters.github.asyncio.sleep"):
+        adapter = GitHubAdapter(token="fake-token")
+        hits = await adapter.search_code("org", ["AKIA"])
+        await adapter.close()
+
+    assert len(hits) == 1
+    assert hits[0].matched_pattern == "AKIA"
+
+
+@pytest.mark.asyncio
+async def test_search_code_skips_pattern_after_failed_retry(mock_api):
+    """Pattern should be skipped if retry also fails; other patterns still run."""
+    mock_api.get("/search/code").mock(
+        side_effect=[
+            Response(403),  # rate limited on AKIA
+            Response(403),  # retry also fails
+            Response(  # second pattern succeeds
+                200,
+                json={
+                    "items": [
+                        {
+                            "path": "keys.py",
+                            "html_url": "https://github.com/org/repo/blob/main/keys.py",
+                            "repository": {
+                                "name": "repo",
+                                "full_name": "org/repo",
+                                "clone_url": "https://github.com/org/repo.git",
+                                "default_branch": "main",
+                                "size": 100,
+                                "private": False,
+                                "pushed_at": "2026-01-01T00:00:00Z",
+                            },
+                            "text_matches": [{"fragment": "sk_live_abc123"}],
+                        }
+                    ]
+                },
+            ),
+        ]
+    )
+
+    with patch("app.adapters.github.asyncio.sleep"):
+        adapter = GitHubAdapter(token="fake-token")
+        hits = await adapter.search_code("org", ["AKIA", "sk_live_"])
+        await adapter.close()
+
+    # AKIA was dropped, sk_live_ succeeded
+    assert len(hits) == 1
+    assert hits[0].matched_pattern == "sk_live_"

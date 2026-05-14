@@ -85,9 +85,16 @@ class GitHubAdapter(PlatformAdapter):
                     headers={"Accept": "application/vnd.github.text-match+json"},
                 )
                 if resp.status_code == 403:
-                    logger.warning("Rate limited on search, sleeping 60s")
+                    logger.warning("Rate limited on search, sleeping 60s — retrying pattern %s", pattern)
                     await asyncio.sleep(60)
-                    continue
+                    resp = await self._client.get(
+                        "/search/code",
+                        params={"q": query, "per_page": 100},
+                        headers={"Accept": "application/vnd.github.text-match+json"},
+                    )
+                    if resp.status_code != 200:
+                        logger.warning("Retry failed for pattern %s (status %s)", pattern, resp.status_code)
+                        continue
                 if resp.status_code == 422:
                     logger.warning("Search query rejected: %s", query)
                     continue
