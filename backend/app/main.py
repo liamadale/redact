@@ -27,6 +27,10 @@ from app.worker import task_deep_scan, task_quick_scan
 
 logger = logging.getLogger(__name__)
 
+# Timeout for each Redis pub/sub poll iteration — long enough to avoid
+# busy-waiting but short enough to allow the keepalive heartbeat.
+REDIS_PUBSUB_TIMEOUT = 30.0
+
 app = FastAPI(title="Redact", version="0.1.0")
 
 
@@ -123,6 +127,8 @@ async def create_scan(body: ScanCreate, db: Session = Depends(get_db)):
         status="queued",
         repos_total=0,
         repos_scanned=0,
+        # replace(tzinfo=None): SQLAlchemy maps to a TIMESTAMP WITHOUT TIME ZONE
+        # column; passing an aware datetime raises a type mismatch on some drivers.
         started_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(scan)
@@ -180,7 +186,7 @@ async def stream_scan(scan_id: uuid.UUID, db: Session = Depends(get_db)):
         try:
             while True:
                 msg = await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=30.0
+                    ignore_subscribe_messages=True, timeout=REDIS_PUBSUB_TIMEOUT
                 )
                 if msg and msg["type"] == "message":
                     data = msg["data"]

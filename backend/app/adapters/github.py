@@ -115,10 +115,8 @@ class GitHubAdapter(PlatformAdapter):
                 seen.add(dedup_key)
 
                 # Redact the matched fragment (show first 4 chars + mask)
-                fragment = ""
-                for tm in item.get("text_matches", []):
-                    fragment = tm.get("fragment", "")
-                    break
+                text_matches = item.get("text_matches", [])
+                fragment = text_matches[0].get("fragment", "") if text_matches else ""
 
                 repo = Repo(
                     name=repo_data["name"],

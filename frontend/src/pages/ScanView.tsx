@@ -450,6 +450,8 @@ export function ScanView() {
               {/* Filter: ALL */}
               <button
                 type="button"
+                aria-label="Show all log entries"
+                aria-pressed={logFilter === "all"}
                 onClick={() => setLogFilter("all")}
                 className={`px-2 py-0.5 text-[9px] font-mono rounded border transition-colors ${
                   logFilter === "all"
@@ -463,6 +465,8 @@ export function ScanView() {
               {warnCount > 0 && (
                 <button
                   type="button"
+                  aria-label="Show only warnings and errors"
+                  aria-pressed={logFilter === "warn"}
                   onClick={() => setLogFilter("warn")}
                   className={`px-2 py-0.5 text-[9px] font-mono rounded border transition-colors ${
                     logFilter === "warn"
@@ -477,6 +481,8 @@ export function ScanView() {
               {errorCount > 0 && (
                 <button
                   type="button"
+                  aria-label="Show only errors"
+                  aria-pressed={logFilter === "error"}
                   onClick={() => setLogFilter("error")}
                   className={`px-2 py-0.5 text-[9px] font-mono rounded border transition-colors ${
                     logFilter === "error"

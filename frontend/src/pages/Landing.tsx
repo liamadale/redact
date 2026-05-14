@@ -108,6 +108,7 @@ export function Landing() {
   const [scanType, setScanType] = useState<"quick" | "deep">("quick");
   const [targetType, setTargetType] = useState<"org" | "repo">("org");
   const [token, setToken] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const { data: scanList } = useQuery({
     queryKey: ["scans"],
@@ -122,9 +123,27 @@ export function Landing() {
     },
   });
 
+  const validateInputs = (): string | null => {
+    const t = target.trim();
+    if (!t) return "Target is required";
+    if (targetType === "repo" && !/^[^/]+\/[^/]+$/.test(t))
+      return "Repo must be in owner/repo format";
+    if (targetType === "org" && /\//.test(t))
+      return "Org/user must not contain a slash";
+    const tok = token.trim();
+    if (tok && !tok.startsWith("ghp_") && !tok.startsWith("github_pat_") && !tok.startsWith("gho_"))
+      return "Token doesn't look like a GitHub PAT (expected ghp_, github_pat_, or gho_ prefix)";
+    return null;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!target.trim()) return;
+    const err = validateInputs();
+    if (err) {
+      setValidationError(err);
+      return;
+    }
+    setValidationError(null);
     mutation.mutate({
       target_type: targetType,
       target_name: target.trim(),
@@ -226,6 +245,9 @@ export function Landing() {
                 className="w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
               />
             </div>
+            {validationError && (
+              <p className="text-tokyo-red text-xs">{validationError}</p>
+            )}
             {mutation.isError && (
               <p className="text-tokyo-red text-xs">{mutation.error.message}</p>
             )}

@@ -142,7 +142,6 @@ def task_deep_scan(
                     msg = f"Organization or user not found: {target_name}"
                 else:
                     msg = f"GitHub API error: {status_code}"
-                scan = db.query(Scan).filter(Scan.id == uuid.UUID(scan_id)).first()
                 if scan:
                     scan.status = "failed"
                     db.commit()
@@ -150,7 +149,6 @@ def task_deep_scan(
                 return
 
         if not repos:
-            scan = db.query(Scan).filter(Scan.id == uuid.UUID(scan_id)).first()
             if scan:
                 scan.status = "failed"
                 db.commit()

@@ -94,9 +94,13 @@ export function Report() {
     }
   };
 
-  const sevCounts = Object.fromEntries(
-    SEVERITIES.map((s) => [s, allFindings.filter((f) => f.severity === s).length]),
-  ) as Record<Severity, number>;
+  const sevCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        SEVERITIES.map((s) => [s, allFindings.filter((f) => f.severity === s).length]),
+      ) as Record<Severity, number>,
+    [allFindings],
+  );
 
   return (
     <div className="min-h-screen p-8 max-w-3xl mx-auto">

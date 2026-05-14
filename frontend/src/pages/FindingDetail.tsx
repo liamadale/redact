@@ -69,6 +69,8 @@ export function FindingDetail() {
     queryKey: ["finding", scanId, findingId],
     queryFn: () => api.getFinding(scanId!, findingId!),
     enabled: !!scanId && !!findingId,
+    // Don't carry over stale data from a previous finding when params change
+    placeholderData: undefined,
   });
 
   if (isLoading) {
