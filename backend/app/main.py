@@ -121,7 +121,7 @@ async def create_scan(body: ScanCreate, db: Session = Depends(get_db)):
         status="queued",
         repos_total=0,
         repos_scanned=0,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(scan)
     db.commit()
@@ -148,7 +148,7 @@ async def get_scan(scan_id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @app.get("/scans/{scan_id}/stream")
-async def stream_scan(scan_id: uuid.UUID):
+async def stream_scan(scan_id: uuid.UUID, db: Session = Depends(get_db)):
     import asyncio
     import json
 
@@ -156,7 +156,18 @@ async def stream_scan(scan_id: uuid.UUID):
 
     redis_url = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    terminal_status = scan.status in ("completed", "failed")
+
     async def event_generator():
+        if terminal_status:
+            payload = json.dumps({"event": scan.status, "scan_id": str(scan_id)})
+            yield f"data: {payload}\n\n"
+            return
+
         r = aioredis.from_url(redis_url)
         pubsub = r.pubsub()
         await pubsub.subscribe(f"scan:{scan_id}")

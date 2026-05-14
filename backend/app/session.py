@@ -13,13 +13,16 @@ def _get_redis() -> redis.Redis:
 def store_token(session_id: str, token: str) -> None:
     """Store a GitHub PAT in Redis under session:{session_id} with TTL."""
     r = _get_redis()
-    r.setex(f"session:{session_id}", SESSION_TTL, token)
-    r.close()
+    try:
+        r.setex(f"session:{session_id}", SESSION_TTL, token)
+    finally:
+        r.close()
 
 
 def get_token(session_id: str) -> str | None:
     """Retrieve a GitHub PAT from Redis session. Returns None if expired/missing."""
     r = _get_redis()
-    val = r.get(f"session:{session_id}")
-    r.close()
-    return val
+    try:
+        return r.get(f"session:{session_id}")
+    finally:
+        r.close()

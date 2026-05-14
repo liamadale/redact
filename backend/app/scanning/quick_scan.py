@@ -69,7 +69,7 @@ async def run_quick_scan(
             db.add(db_hit)
 
         scan.status = "completed"
-        scan.completed_at = datetime.now(timezone.utc)
+        scan.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
         logger.info("Quick scan %s completed with %d hits", scan_id, len(hits))
 

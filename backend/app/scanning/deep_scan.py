@@ -238,7 +238,7 @@ def run_deep_scan(
                 on_progress({"event": "repo_complete", "repo": repo_name})
 
         scan.status = "partial" if any_timeout else "completed"
-        scan.completed_at = datetime.now(timezone.utc)
+        scan.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
 
     except Exception as e:

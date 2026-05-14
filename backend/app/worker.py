@@ -4,6 +4,8 @@ import os
 import shutil
 import uuid
 
+import redis
+
 from celery import Celery
 from celery.signals import worker_ready
 
@@ -34,13 +36,13 @@ def cleanup_orphaned_scans(**kwargs: object) -> None:
         logger.info("Cleaned up orphaned scan directories")
 
 
+_redis_pool = redis.ConnectionPool.from_url(REDIS_URL)
+
+
 def _publish_progress(scan_id: str, data: dict) -> None:
     """Publish scan progress to Redis pub/sub channel."""
-    import redis
-
-    r = redis.Redis.from_url(REDIS_URL)
+    r = redis.Redis(connection_pool=_redis_pool)
     r.publish(f"scan:{scan_id}", json.dumps(data))
-    r.close()
 
 
 @app.task(name="redact.quick_scan")
@@ -159,7 +161,7 @@ def task_reap_stale_scans() -> None:
 
     db = SessionLocal()
     try:
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=10)
         stale = (
             db.query(Scan)
             .filter(Scan.status == "running", Scan.started_at < cutoff)
@@ -167,7 +169,7 @@ def task_reap_stale_scans() -> None:
         )
         for scan in stale:
             scan.status = "failed"
-            scan.completed_at = datetime.now(timezone.utc)
+            scan.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             logger.warning("Reaped stale scan %s", scan.id)
         db.commit()
     finally:
