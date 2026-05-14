@@ -213,13 +213,35 @@ function FindingRow({ finding, scanId }: { finding: Finding; scanId: string }) {
           )}
         </div>
         <p className="text-tokyo-comment text-[10px] font-mono truncate">{finding.repo_name}</p>
-        <p className="text-tokyo-comment/50 text-[10px] font-mono truncate">
-          {finding.file_path}
-          {finding.line_number ? `:${finding.line_number}` : ""}
+        <div className="flex items-center gap-1 text-[10px] font-mono">
+          <span className="text-tokyo-comment/50 truncate">
+            {finding.file_path}
+            {finding.line_number ? `:${finding.line_number}` : ""}
+            {finding.commit_sha && (
+              <span className="ml-1 text-tokyo-border/70">#{finding.commit_sha.slice(0, 7)}</span>
+            )}
+          </span>
           {finding.commit_sha && (
-            <span className="ml-1 text-tokyo-border/70">#{finding.commit_sha.slice(0, 7)}</span>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const url = `https://github.com/${finding.repo_name}/blob/${finding.commit_sha}/${finding.file_path}${finding.line_number ? `#L${finding.line_number}` : ""}`;
+                window.open(url, "_blank", "noopener,noreferrer");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") e.currentTarget.click();
+              }}
+              className="shrink-0 text-tokyo-comment/30 hover:text-tokyo-blue transition-colors cursor-pointer"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                <path d="M5.5 1H9v3.5M9 1L4.5 5.5M2 2.5H1v6.5h6.5V8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </span>
           )}
-        </p>
+        </div>
       </div>
       <span className="text-tokyo-comment/30 text-[10px] opacity-0 group-hover:opacity-100 shrink-0 mt-0.5">→</span>
     </Link>

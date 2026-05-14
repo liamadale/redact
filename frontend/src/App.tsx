@@ -1,4 +1,25 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+
+function ShieldLockIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 32 32"
+      fill="none"
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        d="M16 2L4 7v9c0 6.5 5.1 12.6 12 14 6.9-1.4 12-7.5 12-14V7L16 2z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <circle cx="16" cy="14" r="3" fill="currentColor" />
+      <rect x="14.5" y="16.5" width="3" height="4.5" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
 import { BrowserRouter, Routes, Route, Link, useLocation, matchPath } from "react-router-dom";
 import { Dashboard } from "./pages/Dashboard";
 import { FindingDetail } from "./pages/FindingDetail";
@@ -63,7 +84,8 @@ function Nav() {
       <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
         {/* Left: logo + breadcrumbs */}
         <div className="flex items-center gap-0 text-sm min-w-0">
-          <Link to="/" className="text-tokyo-fg font-bold shrink-0 hover:text-tokyo-blue transition-colors">
+          <Link to="/" className="flex items-center gap-1.5 text-tokyo-fg font-bold shrink-0 hover:text-tokyo-blue transition-colors">
+            <ShieldLockIcon className="w-4 h-4" />
             Redact
           </Link>
 
