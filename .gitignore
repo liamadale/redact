@@ -32,3 +32,4 @@ htmlcov/
 test-results.xml
 backend/test.db
 .kiro/
+.claude/
