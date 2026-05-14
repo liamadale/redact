@@ -18,6 +18,8 @@ interface ScanStore {
   logs: LogEntry[];
   addLog: (entry: Omit<LogEntry, "id" | "timestamp">) => void;
   clearLogs: () => void;
+  connectionStatus: "live" | "polling" | "disconnected";
+  setConnectionStatus: (status: "live" | "polling" | "disconnected") => void;
 }
 
 export const useScanStore = create<ScanStore>((set) => ({
@@ -31,5 +33,7 @@ export const useScanStore = create<ScanStore>((set) => ({
         { ...entry, id: ++_logId, timestamp: new Date() },
       ],
     })),
-  clearLogs: () => set({ logs: [] }),
+  clearLogs: () => set({ logs: [], connectionStatus: "disconnected" }),
+  connectionStatus: "disconnected",
+  setConnectionStatus: (status) => set({ connectionStatus: status }),
 }));

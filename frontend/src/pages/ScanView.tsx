@@ -281,7 +281,8 @@ export function ScanView() {
   const { id } = useParams<{ id: string }>();
   useSSE(id ?? null);
 
-  const logs      = useScanStore((s) => s.logs);
+  const logs             = useScanStore((s) => s.logs);
+  const connectionStatus = useScanStore((s) => s.connectionStatus);
   const logEndRef = useRef<HTMLDivElement>(null);
   const [elapsed,    setElapsed]    = useState(0);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -487,18 +488,37 @@ export function ScanView() {
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setAutoScroll((v) => !v)}
-              className={`text-[9px] font-mono px-2 py-0.5 rounded border transition-colors ${
-                autoScroll
-                  ? "border-tokyo-blue/40 text-tokyo-blue/70"
-                  : "border-tokyo-border/40 text-tokyo-comment/40 hover:border-tokyo-border"
-              }`}
-            >
-              {autoScroll ? "⇣ LIVE" : "⇣ PAUSED"}
-            </button>
+            <div className="flex items-center gap-2">
+              {isActive && connectionStatus !== "disconnected" && (
+                <span className={`inline-flex items-center gap-1 text-[9px] font-mono font-bold ${
+                  connectionStatus === "live" ? "text-tokyo-green" : "text-tokyo-yellow"
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    connectionStatus === "live" ? "bg-tokyo-green animate-pulse" : "bg-tokyo-yellow"
+                  }`} />
+                  {connectionStatus === "live" ? "LIVE" : "POLLING"}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setAutoScroll((v) => !v)}
+                className={`text-[9px] font-mono px-2 py-0.5 rounded border transition-colors ${
+                  autoScroll
+                    ? "border-tokyo-blue/40 text-tokyo-blue/70"
+                    : "border-tokyo-border/40 text-tokyo-comment/40 hover:border-tokyo-border"
+                }`}
+              >
+                {autoScroll ? "⇣ LIVE" : "⇣ PAUSED"}
+              </button>
+            </div>
           </div>
+
+          {/* Polling fallback banner */}
+          {isActive && connectionStatus === "polling" && (
+            <div className="px-4 py-1.5 border-b border-tokyo-yellow/20 bg-tokyo-yellow/5 text-[10px] font-mono text-tokyo-yellow/70 shrink-0">
+              SSE stream lost — results updating via poll every 5s
+            </div>
+          )}
 
           {/* Log body */}
           <div className="flex-1 overflow-y-auto p-3 font-mono leading-5 space-y-0">
