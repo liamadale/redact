@@ -49,6 +49,7 @@ def _publish_progress(scan_id: str, data: dict) -> None:
         r.close()
 
 
+
 def _friendly_error(e: Exception) -> str:
     if isinstance(e, httpx.ConnectError):
         return "Could not connect to GitHub API — check network connectivity"
@@ -126,7 +127,7 @@ def task_deep_scan(
                 finally:
                     await adapter.close()
                 return [
-                    {"full_name": r.full_name, "clone_url": r.clone_url}
+                    {"full_name": r.full_name, "clone_url": r.clone_url, "is_private": r.is_private}
                     for r in result
                 ]
 

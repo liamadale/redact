@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { useSSE } from "../hooks/useSSE";
 import { useScanStore, type LogEntry } from "../stores/scanStore";
@@ -99,8 +99,10 @@ function PipelineStrip({ scan }: { scan: Scan }) {
 const STATUS_CONFIG = {
   queued:    { label: "QUEUED",    dot: "bg-tokyo-blue",    text: "text-tokyo-blue",    pulse: true  },
   running:   { label: "RUNNING",   dot: "bg-tokyo-yellow",  text: "text-tokyo-yellow",  pulse: true  },
+  paused:    { label: "PAUSED",    dot: "bg-tokyo-orange",  text: "text-tokyo-orange",  pulse: false },
   completed: { label: "COMPLETED", dot: "bg-tokyo-green",   text: "text-tokyo-green",   pulse: false },
   partial:   { label: "PARTIAL",   dot: "bg-tokyo-yellow",  text: "text-tokyo-yellow",  pulse: false },
+  cancelled: { label: "CANCELLED", dot: "bg-tokyo-comment", text: "text-tokyo-comment", pulse: false },
   failed:    { label: "FAILED",    dot: "bg-tokyo-red",     text: "text-tokyo-red",     pulse: false },
 } satisfies Record<Scan["status"], { label: string; dot: string; text: string; pulse: boolean }>;
 
@@ -277,6 +279,63 @@ function ProgressBar({ scan }: { scan: Scan }) {
   );
 }
 
+// ── Scan controls ─────────────────────────────────────────────────────────────
+
+function ScanControls({ scan, scanId }: { scan: Scan; scanId: string }) {
+  const queryClient = useQueryClient();
+  const [loading, setLoading] = useState(false);
+
+  const handleAction = useCallback(async (action: "pause" | "resume" | "cancel") => {
+    setLoading(true);
+    try {
+      if (action === "pause") await api.pauseScan(scanId);
+      else if (action === "resume") await api.resumeScan(scanId);
+      else await api.cancelScan(scanId);
+      queryClient.invalidateQueries({ queryKey: ["scan", scanId] });
+    } finally {
+      setLoading(false);
+    }
+  }, [scanId, queryClient]);
+
+  const isRunning = scan.status === "running" || scan.status === "queued";
+  const isPaused = scan.status === "paused";
+
+  if (!isRunning && !isPaused) return null;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {isRunning && (
+        <button
+          type="button"
+          onClick={() => handleAction("pause")}
+          disabled={loading}
+          className="px-2.5 py-1 text-[10px] font-mono font-bold rounded border border-tokyo-orange/40 text-tokyo-orange hover:bg-tokyo-orange/10 transition-colors disabled:opacity-50"
+        >
+          ⏸ Pause
+        </button>
+      )}
+      {isPaused && (
+        <button
+          type="button"
+          onClick={() => handleAction("resume")}
+          disabled={loading}
+          className="px-2.5 py-1 text-[10px] font-mono font-bold rounded border border-tokyo-green/40 text-tokyo-green hover:bg-tokyo-green/10 transition-colors disabled:opacity-50"
+        >
+          ▶ Resume
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => handleAction("cancel")}
+        disabled={loading}
+        className="px-2.5 py-1 text-[10px] font-mono font-bold rounded border border-tokyo-red/40 text-tokyo-red hover:bg-tokyo-red/10 transition-colors disabled:opacity-50"
+      >
+        ✕ Cancel
+      </button>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function ScanView() {
@@ -296,7 +355,7 @@ export function ScanView() {
     enabled: !!id,
     refetchInterval: (query) => {
       const s = query.state.data;
-      if (s && ["completed", "failed", "partial"].includes(s.status)) return false;
+      if (s && ["completed", "failed", "partial", "cancelled"].includes(s.status)) return false;
       return 5000;
     },
   });
@@ -305,14 +364,12 @@ export function ScanView() {
     queryKey: ["findings", id],
     queryFn: () => api.getFindings(id!, 0, 200),
     enabled: !!id && scan?.scan_type === "deep",
-    refetchInterval: scan?.status === "running" ? 3000 : false,
   });
 
   const { data: hits } = useQuery({
     queryKey: ["hits", id],
     queryFn: () => api.getHits(id!),
     enabled: !!id && scan?.scan_type === "quick",
-    refetchInterval: scan?.status === "running" ? 3000 : false,
   });
 
   useEffect(() => {
@@ -338,8 +395,8 @@ export function ScanView() {
     return <PageLoader />;
   }
 
-  const isActive    = ["running", "queued"].includes(scan.status);
-  const isDone      = ["completed", "partial", "failed"].includes(scan.status);
+  const isActive    = ["running", "queued", "paused"].includes(scan.status);
+  const isDone      = ["completed", "partial", "failed", "cancelled"].includes(scan.status);
   const pct         = scan.repos_total > 0 ? Math.round((scan.repos_scanned / scan.repos_total) * 100) : null;
   const allFindings = findings?.findings ?? [];
 
@@ -379,6 +436,7 @@ export function ScanView() {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              <ScanControls scan={scan} scanId={id!} />
             </div>
           </div>
 
@@ -644,6 +702,13 @@ export function ScanView() {
         <div className="border-t border-tokyo-red/20 px-6 py-2.5 bg-tokyo-red/5 shrink-0">
           <div className="max-w-7xl mx-auto text-[11px] font-mono text-tokyo-red">
             ✗ scan failed — see worker log for details
+          </div>
+        </div>
+      )}
+      {scan.status === "cancelled" && (
+        <div className="border-t border-tokyo-comment/20 px-6 py-2.5 bg-white/[0.02] shrink-0">
+          <div className="max-w-7xl mx-auto text-[11px] font-mono text-tokyo-comment">
+            ✕ scan cancelled — {scan.repos_scanned} of {scan.repos_total} repos completed
           </div>
         </div>
       )}

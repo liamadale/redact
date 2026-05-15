@@ -5,9 +5,11 @@ import redis
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 SESSION_TTL = 7200  # 2 hours
 
+_pool = redis.ConnectionPool.from_url(REDIS_URL, decode_responses=True)
+
 
 def _get_redis() -> redis.Redis:
-    return redis.Redis.from_url(REDIS_URL, decode_responses=True)
+    return redis.Redis(connection_pool=_pool)
 
 
 def store_token(session_id: str, token: str) -> None:

@@ -116,6 +116,17 @@ export function useSSE(scanId: string | null) {
               message: data.message ?? data.reason ?? "worker warning",
             });
             break;
+          case "paused":
+            addLog({ level: "warn", prefix: "CTRL", message: "scan paused by user" });
+            break;
+          case "resumed":
+            addLog({ level: "info", prefix: "CTRL", message: "scan resumed" });
+            break;
+          case "cancelled":
+            queryClient.invalidateQueries({ queryKey: ["findings", scanId] });
+            queryClient.invalidateQueries({ queryKey: ["hits", scanId] });
+            addLog({ level: "error", prefix: "CTRL", message: "scan cancelled by user" });
+            break;
           case "failed":
             addLog({
               level: "error",

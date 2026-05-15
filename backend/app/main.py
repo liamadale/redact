@@ -345,3 +345,49 @@ async def get_report(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.post("/scans/{scan_id}/pause", status_code=202)
+async def pause_scan(scan_id: uuid.UUID, db: Session = Depends(get_db)):
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.status not in ("running", "queued"):
+        raise HTTPException(status_code=409, detail="Scan is not active")
+    from app.scan_control import send_signal  # noqa: PLC0415
+
+    scan.status = "paused"
+    db.commit()
+    send_signal(str(scan_id), "pause")
+    return {"status": "paused"}
+
+
+@app.post("/scans/{scan_id}/resume", status_code=202)
+async def resume_scan(scan_id: uuid.UUID, db: Session = Depends(get_db)):
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.status != "paused":
+        raise HTTPException(status_code=409, detail="Scan is not paused")
+    from app.scan_control import send_signal  # noqa: PLC0415
+
+    scan.status = "running"
+    db.commit()
+    send_signal(str(scan_id), "resume")
+    return {"status": "running"}
+
+
+@app.post("/scans/{scan_id}/cancel", status_code=202)
+async def cancel_scan(scan_id: uuid.UUID, db: Session = Depends(get_db)):
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.status not in ("running", "queued", "paused"):
+        raise HTTPException(status_code=409, detail="Scan is not active")
+    from app.scan_control import send_signal  # noqa: PLC0415
+
+    scan.status = "cancelled"
+    scan.completed_at = datetime.now(timezone.utc)
+    db.commit()
+    send_signal(str(scan_id), "cancel")
+    return {"status": "cancelled"}
