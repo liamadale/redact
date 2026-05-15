@@ -36,10 +36,10 @@ beforeEach(() => {
 });
 
 describe("ScanView", () => {
-  it("shows Connecting... when scan data is loading", () => {
+  it("shows loading state when scan data is loading", () => {
     vi.mocked(api.getScan).mockImplementation(() => new Promise(() => {}));
     renderScanView();
-    expect(screen.getByText("Connecting...")).toBeInTheDocument();
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
 
   it("renders scan header with target name after load", async () => {

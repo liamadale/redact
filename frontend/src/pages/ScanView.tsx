@@ -4,6 +4,8 @@ import { Link, useParams } from "react-router-dom";
 import { useSSE } from "../hooks/useSSE";
 import { useScanStore, type LogEntry } from "../stores/scanStore";
 import { api } from "../lib/api";
+import { PageLoader } from "../components/PageLoader";
+import { QueryError } from "../components/QueryError";
 import type { Scan, Finding } from "../lib/types";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -288,7 +290,7 @@ export function ScanView() {
   const [autoScroll, setAutoScroll] = useState(true);
   const [logFilter,  setLogFilter]  = useState<LogFilter>("all");
 
-  const { data: scan } = useQuery({
+  const { data: scan, isError: scanError, error: scanErrorObj, refetch: refetchScan } = useQuery({
     queryKey: ["scan", id],
     queryFn: () => api.getScan(id!),
     enabled: !!id,
@@ -328,15 +330,12 @@ export function ScanView() {
   const warnCount    = useMemo(() => logs.filter((l) => l.level === "warn").length, [logs]);
   const errorCount   = useMemo(() => logs.filter((l) => l.level === "error").length, [logs]);
 
+  if (scanError) {
+    return <QueryError error={scanErrorObj as Error} retry={() => void refetchScan()} />;
+  }
+
   if (!scan) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="flex items-center gap-2 text-tokyo-comment">
-          <span className="w-2 h-2 rounded-full bg-tokyo-blue animate-pulse" />
-          <span className="text-sm font-mono">Connecting...</span>
-        </div>
-      </div>
-    );
+    return <PageLoader />;
   }
 
   const isActive    = ["running", "queued"].includes(scan.status);

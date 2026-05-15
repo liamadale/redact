@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
+import { PageLoader } from "../components/PageLoader";
+import { QueryError } from "../components/QueryError";
 import {
   Bar,
   BarChart,
@@ -81,7 +83,12 @@ function buildAuthorData(findings: Finding[]) {
 export function Metrics() {
   const { id: scanId } = useParams<{ id: string }>();
 
-  const { data: scan } = useQuery({
+  const {
+    data: scan,
+    isError: scanError,
+    error: scanErrorObj,
+    refetch: refetchScan,
+  } = useQuery({
     queryKey: ["scan", scanId],
     queryFn: () => api.getScan(scanId!),
     enabled: !!scanId,
@@ -109,13 +116,21 @@ export function Metrics() {
     return c;
   }, [allFindings]);
 
-  if (!scanId || !scan) {
+  if (!scanId) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8">
         <p className="text-tokyo-comment mb-4">No scan selected</p>
         <Link to="/" className="text-tokyo-blue hover:underline">Start a new scan</Link>
       </div>
     );
+  }
+
+  if (scanError) {
+    return <QueryError error={scanErrorObj as Error} retry={() => void refetchScan()} />;
+  }
+
+  if (!scan) {
+    return <PageLoader />;
   }
 
   const uniqueTypes = new Set(allFindings.map((f) => f.secret_type)).size;

@@ -106,12 +106,12 @@ describe("api client", () => {
 
   it("request throws on non-ok response with status and body", async () => {
     mockHttpError(404, "scan not found");
-    await expect(api.getScan("missing")).rejects.toThrow("404");
+    await expect(api.getScan("missing")).rejects.toThrow("The requested resource was not found");
   });
 
   it("request throws on 500 response", async () => {
     mockHttpError(500, "internal server error");
-    await expect(api.listScans()).rejects.toThrow("500");
+    await expect(api.listScans()).rejects.toThrow("Server error — please try again");
   });
 
   it("request includes Content-Type header", async () => {
