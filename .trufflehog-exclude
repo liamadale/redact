@@ -1,0 +1,8 @@
+# Files containing default Docker Compose Postgres dev credentials (redact:redact@db:5432)
+# These are not real secrets — they only work inside the Docker network
+.env.example
+README.md
+docs/
+backend/alembic.ini
+backend/alembic/env.py
+backend/app/database.py
