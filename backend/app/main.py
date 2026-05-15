@@ -158,6 +158,17 @@ async def get_scan(scan_id: uuid.UUID, db: Session = Depends(get_db)):
     return scan
 
 
+@app.delete("/scans/{scan_id}", status_code=204)
+async def delete_scan(scan_id: uuid.UUID, db: Session = Depends(get_db)):
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.status in ("queued", "running"):
+        raise HTTPException(status_code=409, detail="Cannot delete a scan that is still in progress")
+    db.delete(scan)
+    db.commit()
+
+
 @app.get("/scans/{scan_id}/stream")
 async def stream_scan(scan_id: uuid.UUID, db: Session = Depends(get_db)):
     import asyncio

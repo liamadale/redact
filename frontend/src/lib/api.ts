@@ -32,6 +32,11 @@ export const api = {
 
   getScan: (id: string) => request<Scan>(`/scans/${id}`),
 
+  deleteScan: (id: string) =>
+    fetch(`${API_BASE}/scans/${id}`, { method: "DELETE" }).then((res) => {
+      if (!res.ok) throw new ApiError(res.status, res.statusText);
+    }),
+
   getFindings: (id: string, offset = 0, limit = 50) =>
     request<FindingsResponse>(
       `/scans/${id}/findings?offset=${offset}&limit=${limit}`
