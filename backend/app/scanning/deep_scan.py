@@ -75,11 +75,16 @@ def _run_trufflehog(
                 continue
             findings.append(finding)
             if on_finding:
-                on_finding(finding)
+                try:
+                    on_finding(finding)
+                except Exception:
+                    logger.warning("on_finding callback failed", exc_info=True)
 
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
+    except OSError as e:
+        logger.warning("TruffleHog stdout read error (process likely killed): %s", e)
     finally:
         timer.cancel()
         proc.stdout.close()
@@ -190,11 +195,16 @@ def _scan_repo(
     def on_finding(raw_finding: dict) -> None:
         parsed_findings.append(_parse_finding(raw_finding, repo_name))
 
-    _, did_timeout = _run_trufflehog(str(repo_dir), timeout=timeout, on_finding=on_finding)
-    if did_timeout:
-        logger.warning("TruffleHog timed out on %s", repo_name)
+    try:
+        _, did_timeout = _run_trufflehog(str(repo_dir), timeout=timeout, on_finding=on_finding)
+        if did_timeout:
+            logger.warning("TruffleHog timed out on %s", repo_name)
+    except Exception as e:
+        logger.error("TruffleHog failed on %s: %s", repo_name, e)
+        return repo_name, parsed_findings, False
+    finally:
+        shutil.rmtree(repo_dir, ignore_errors=True)
 
-    shutil.rmtree(repo_dir, ignore_errors=True)
     return repo_name, parsed_findings, did_timeout
 
 
@@ -226,6 +236,7 @@ def run_deep_scan(
     scan_dir.mkdir(parents=True, exist_ok=True)
 
     any_timeout = False
+    any_repo_error = False
     repos_done = 0
     scan_id_str = str(scan_id)
 
@@ -270,7 +281,22 @@ def run_deep_scan(
                                 on_progress({"event": "cancelled"})
                             return
 
-                repo_name, parsed_findings, did_timeout = future.result()
+                try:
+                    repo_name, parsed_findings, did_timeout = future.result()
+                except Exception as e:
+                    failed_repo = futures[future]
+                    repo_name = failed_repo["full_name"]
+                    logger.error("Repo %s failed: %s", repo_name, e)
+                    scan.scan_warnings = list(scan.scan_warnings or []) + [
+                        f"{repo_name}: scan error — {e}"
+                    ]
+                    repos_done += 1
+                    scan.repos_scanned = repos_done
+                    db.commit()
+                    any_repo_error = True
+                    if on_progress:
+                        on_progress({"event": "repo_error", "repo": repo_name, "error": str(e)})
+                    continue
 
                 if on_progress:
                     on_progress({"event": "repo_started", "repo": repo_name})
@@ -305,7 +331,7 @@ def run_deep_scan(
 
         db.refresh(scan)
         if scan.status not in ("cancelled", "paused"):
-            scan.status = "partial" if any_timeout else "completed"
+            scan.status = "partial" if (any_timeout or any_repo_error) else "completed"
             scan.completed_at = datetime.now(timezone.utc)
             db.commit()
 
