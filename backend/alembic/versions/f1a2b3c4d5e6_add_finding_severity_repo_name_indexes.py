@@ -18,8 +18,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_index("idx_findings_severity", "findings", ["severity"])
-    op.create_index("idx_findings_repo_name", "findings", ["repo_name"])
+    op.create_index("idx_findings_severity", "findings", ["severity"], if_not_exists=True)
+    op.create_index("idx_findings_repo_name", "findings", ["repo_name"], if_not_exists=True)
 
 
 def downgrade() -> None:
