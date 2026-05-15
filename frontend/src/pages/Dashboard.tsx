@@ -98,13 +98,13 @@ export function Dashboard() {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [filterText, setFilterText] = useState('');
 
-  const { data: scan } = useQuery({
+  const { data: scan, isLoading: scanLoading } = useQuery({
     queryKey: ["scan", scanId],
     queryFn: () => api.getScan(scanId!),
     enabled: !!scanId,
   });
 
-  const { data: findings } = useQuery({
+  const { data: findings, isLoading: findingsLoading } = useQuery({
     queryKey: ["findings", scanId],
     queryFn: () => api.getFindings(scanId!, 0, 200),
     enabled: !!scanId && scan?.scan_type === "deep" && scan?.status !== "queued",
@@ -157,6 +157,17 @@ export function Dashboard() {
     getFilteredRowModel: getFilteredRowModel(),
   });
 
+  if (scanLoading || findingsLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="flex items-center gap-2 text-tokyo-comment">
+          <span className="w-2 h-2 rounded-full bg-tokyo-blue animate-pulse" />
+          <span className="text-sm font-mono">Loading dashboard...</span>
+        </div>
+      </div>
+    );
+  }
+
   if (!scanId || !scan) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8">
@@ -171,6 +182,7 @@ export function Dashboard() {
   const criticalCount = allFindings.filter((f) => f.severity === "critical").length;
   const verifiedCount = allFindings.filter((f) => f.verified).length;
   const reposAffected = new Set(allFindings.map((f) => f.repo_name)).size;
+
 
   return (
     <div className="min-h-screen p-8 max-w-5xl mx-auto">

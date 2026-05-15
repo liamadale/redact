@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   Area,
   AreaChart,
@@ -37,7 +38,7 @@ function buildTimelineData(findings: Finding[]): DataPoint[] {
   return Object.values(buckets).sort((a, b) => a.month.localeCompare(b.month));
 }
 
-export function TimelineChart({ findings }: { findings: Finding[] }) {
+export const TimelineChart = memo(function TimelineChart({ findings }: { findings: Finding[] }) {
   const data = buildTimelineData(findings);
 
   if (data.length === 0) {
@@ -95,4 +96,4 @@ export function TimelineChart({ findings }: { findings: Finding[] }) {
       </AreaChart>
     </ResponsiveContainer>
   );
-}
+});

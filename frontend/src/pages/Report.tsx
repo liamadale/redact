@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../lib/api";
+import { PageLoader } from "../components/PageLoader";
+import { QueryError } from "../components/QueryError";
 import type { Finding } from "../lib/types";
 
 const SEVERITIES = ["critical", "high", "medium", "low"] as const;
@@ -35,13 +37,18 @@ export function Report() {
   const [selRepos, setSelRepos] = useState<Set<string>>(new Set());
   const [showPreview, setShowPreview] = useState(false);
 
-  const { data: scan } = useQuery({
+  const { data: scan, isLoading: scanLoading } = useQuery({
     queryKey: ["scan", scanId],
     queryFn: () => api.getScan(scanId!),
     enabled: !!scanId,
   });
 
-  const { data: findings } = useQuery({
+  const {
+    data: findings,
+    isError: findingsError,
+    error: findingsErrorObj,
+    refetch: refetchFindings,
+  } = useQuery({
     queryKey: ["findings", scanId, "report"],
     queryFn: () => api.getFindings(scanId!, 0, 200),
     enabled: !!scanId,
@@ -94,9 +101,18 @@ export function Report() {
     }
   };
 
-  const sevCounts = Object.fromEntries(
-    SEVERITIES.map((s) => [s, allFindings.filter((f) => f.severity === s).length]),
-  ) as Record<Severity, number>;
+  const sevCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        SEVERITIES.map((s) => [s, allFindings.filter((f) => f.severity === s).length]),
+      ) as Record<Severity, number>,
+    [allFindings],
+  );
+
+  if (scanLoading && !scan) return <PageLoader />;
+  if (findingsError) {
+    return <QueryError error={findingsErrorObj as Error} retry={() => void refetchFindings()} />;
+  }
 
   return (
     <div className="min-h-screen p-8 max-w-3xl mx-auto">

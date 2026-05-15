@@ -42,7 +42,7 @@ class GitHubAdapter(PlatformAdapter):
         repos: list[Repo] = []
         page = 1
         while True:
-            # Always query the target org/user's repos — token is used only for auth
+            # Try as org first, fall back to user
             resp = await self._client.get(
                 f"/orgs/{org}/repos", params={"per_page": 100, "page": page}
             )
@@ -72,7 +72,7 @@ class GitHubAdapter(PlatformAdapter):
             page += 1
         return repos
 
-    async def search_code(self, org: str, patterns: list[str]) -> list[SearchHit]:
+    async def search_code(self, org: str, patterns: list[str], on_warning=None) -> list[SearchHit]:
         hits: list[SearchHit] = []
         seen = set()
 
@@ -85,9 +85,20 @@ class GitHubAdapter(PlatformAdapter):
                     headers={"Accept": "application/vnd.github.text-match+json"},
                 )
                 if resp.status_code == 403:
-                    logger.warning("Rate limited on search, sleeping 60s")
+                    logger.warning("Rate limited on search, sleeping 60s — retrying pattern %s", pattern)
+                    if on_warning:
+                        on_warning(f"Rate limited by GitHub — pattern '{pattern}' may have incomplete results")
                     await asyncio.sleep(60)
-                    continue
+                    resp = await self._client.get(
+                        "/search/code",
+                        params={"q": query, "per_page": 100},
+                        headers={"Accept": "application/vnd.github.text-match+json"},
+                    )
+                    if resp.status_code != 200:
+                        logger.warning("Retry failed for pattern %s (status %s)", pattern, resp.status_code)
+                        if on_warning:
+                            on_warning(f"Rate limited by GitHub — results for pattern '{pattern}' are incomplete")
+                        continue
                 if resp.status_code == 422:
                     logger.warning("Search query rejected: %s", query)
                     continue
@@ -104,10 +115,8 @@ class GitHubAdapter(PlatformAdapter):
                 seen.add(dedup_key)
 
                 # Redact the matched fragment (show first 4 chars + mask)
-                fragment = ""
-                for tm in item.get("text_matches", []):
-                    fragment = tm.get("fragment", "")
-                    break
+                text_matches = item.get("text_matches", [])
+                fragment = text_matches[0].get("fragment", "") if text_matches else ""
 
                 repo = Repo(
                     name=repo_data["name"],

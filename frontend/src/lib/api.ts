@@ -1,3 +1,4 @@
+import { ApiError } from "./errors";
 import type {
   Scan,
   ScanCreate,
@@ -16,7 +17,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   });
   if (!res.ok) {
-    throw new Error(`${res.status}: ${await res.text()}`);
+    throw new ApiError(res.status, await res.text());
   }
   return res.json();
 }
@@ -30,6 +31,11 @@ export const api = {
     request<Scan>("/scans", { method: "POST", body: JSON.stringify(body) }),
 
   getScan: (id: string) => request<Scan>(`/scans/${id}`),
+
+  deleteScan: (id: string) =>
+    fetch(`${API_BASE}/scans/${id}`, { method: "DELETE" }).then((res) => {
+      if (!res.ok) throw new ApiError(res.status, res.statusText);
+    }),
 
   getFindings: (id: string, offset = 0, limit = 50) =>
     request<FindingsResponse>(
@@ -51,7 +57,7 @@ export const api = {
     if (filters?.severity) filters.severity.forEach((s) => params.append("severity", s));
     if (filters?.repo) filters.repo.forEach((r) => params.append("repo", r));
     const res = await fetch(`${API_BASE}/scans/${scanId}/report?${params}`);
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new ApiError(res.status, await res.text());
     return res.blob();
   },
 

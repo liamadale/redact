@@ -265,6 +265,23 @@ def test_valid_repo_format(client):
         assert resp.status_code == 201
 
 
+@patch("app.main.store_token")
+@patch("app.main.task_quick_scan")
+def test_scan_response_does_not_expose_session_id(mock_task, mock_store, client):
+    """Fix 1.8: session_id is an internal field and must not appear in ScanResponse."""
+    mock_task.delay = lambda *a, **kw: None
+    resp = client.post(
+        "/scans",
+        json={
+            "target_type": "org",
+            "target_name": "test-org",
+            "scan_type": "quick",
+        },
+    )
+    assert resp.status_code == 201
+    assert "session_id" not in resp.json()
+
+
 def test_empty_target_name(client):
     resp = client.post(
         "/scans",
@@ -275,3 +292,68 @@ def test_empty_target_name(client):
         },
     )
     assert resp.status_code == 422
+
+
+# --- SSE stream tests ---
+
+
+@patch("app.main.store_token")
+@patch("app.main.task_quick_scan")
+def test_stream_completed_scan_returns_immediately(mock_task, mock_store, client, db):
+    """Fix 1.10: streaming an already-completed scan must yield a terminal event immediately."""
+    import json
+
+    from app.models.models import Scan as ScanModel
+
+    mock_task.delay = lambda *a, **kw: None
+    resp = client.post(
+        "/scans",
+        json={"target_type": "org", "target_name": "test-org", "scan_type": "quick"},
+    )
+    scan_id = resp.json()["id"]
+
+    scan = db.query(ScanModel).filter(ScanModel.id == uuid.UUID(scan_id)).first()
+    scan.status = "completed"
+    db.commit()
+
+    with client.stream("GET", f"/scans/{scan_id}/stream") as stream:
+        lines = [line for line in stream.iter_lines() if line.startswith("data:")]
+
+    assert len(lines) == 1
+    payload = json.loads(lines[0].removeprefix("data: "))
+    assert payload["event"] == "completed"
+    assert payload["scan_id"] == scan_id
+
+
+@patch("app.main.store_token")
+@patch("app.main.task_quick_scan")
+def test_stream_failed_scan_returns_immediately(mock_task, mock_store, client, db):
+    """Fix 1.10: streaming an already-failed scan must yield a terminal event immediately."""
+    import json
+
+    from app.models.models import Scan as ScanModel
+
+    mock_task.delay = lambda *a, **kw: None
+    resp = client.post(
+        "/scans",
+        json={"target_type": "org", "target_name": "test-org", "scan_type": "quick"},
+    )
+    scan_id = resp.json()["id"]
+
+    scan = db.query(ScanModel).filter(ScanModel.id == uuid.UUID(scan_id)).first()
+    scan.status = "failed"
+    db.commit()
+
+    with client.stream("GET", f"/scans/{scan_id}/stream") as stream:
+        lines = [line for line in stream.iter_lines() if line.startswith("data:")]
+
+    assert len(lines) == 1
+    payload = json.loads(lines[0].removeprefix("data: "))
+    assert payload["event"] == "failed"
+
+
+def test_stream_nonexistent_scan_returns_404(client):
+    """Fix 1.10: streaming a non-existent scan must return 404, not hang."""
+    fake_id = str(uuid.uuid4())
+    resp = client.get(f"/scans/{fake_id}/stream")
+    assert resp.status_code == 404

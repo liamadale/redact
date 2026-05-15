@@ -34,6 +34,7 @@ class Scan(Base):
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
     created_at = Column(DateTime, server_default=func.now())
+    scan_warnings = Column(JSON, default=list)
 
     __table_args__ = (Index("idx_scans_session", "session_id"),)
 
@@ -67,6 +68,8 @@ class Finding(Base):
     __table_args__ = (
         UniqueConstraint("scan_id", "dedup_hash", name="uq_findings_dedup"),
         Index("idx_findings_scan_id", "scan_id"),
+        Index("idx_findings_severity", "severity"),
+        Index("idx_findings_repo_name", "repo_name"),
     )
 
 

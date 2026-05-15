@@ -69,6 +69,8 @@ export function FindingDetail() {
     queryKey: ["finding", scanId, findingId],
     queryFn: () => api.getFinding(scanId!, findingId!),
     enabled: !!scanId && !!findingId,
+    // Don't carry over stale data from a previous finding when params change
+    placeholderData: undefined,
   });
 
   if (isLoading) {
@@ -134,16 +136,24 @@ export function FindingDetail() {
       {/* Location + commit info */}
       <div className="mb-6 bg-tokyo-bg-highlight border border-tokyo-border rounded-lg divide-y divide-tokyo-border">
         {[
-          { label: "Repository", value: finding.repo_name },
+          {
+            label: "Repository",
+            value: finding.repo_name,
+            href: `https://github.com/${finding.repo_name}`,
+          },
           {
             label: "File",
             value: `${finding.file_path}${finding.line_number ? `:${finding.line_number}` : ""}`,
             mono: true,
+            href: finding.commit_sha
+              ? `https://github.com/${finding.repo_name}/blob/${finding.commit_sha}/${finding.file_path}${finding.line_number ? `#L${finding.line_number}` : ""}`
+              : undefined,
           },
           finding.commit_sha && {
             label: "Commit",
             value: `${finding.commit_sha.slice(0, 8)}${finding.commit_date ? ` · ${new Date(finding.commit_date).toLocaleDateString()}` : ""}`,
             mono: true,
+            href: `https://github.com/${finding.repo_name}/commit/${finding.commit_sha}`,
           },
           finding.commit_author && { label: "Author", value: finding.commit_author },
           finding.commit_message && { label: "Message", value: finding.commit_message },
@@ -162,11 +172,20 @@ export function FindingDetail() {
             return (
               <div key={row.label} className="flex px-4 py-3 gap-4">
                 <span className="text-tokyo-comment text-sm w-28 shrink-0">{row.label}</span>
-                <span
-                  className={`text-tokyo-fg text-sm break-all ${row.mono ? "font-mono text-xs" : ""}`}
-                >
-                  {row.value}
-                </span>
+                {row.href ? (
+                  <a
+                    href={row.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`text-tokyo-blue hover:underline text-sm break-all ${row.mono ? "font-mono text-xs" : ""}`}
+                  >
+                    {row.value}
+                  </a>
+                ) : (
+                  <span className={`text-tokyo-fg text-sm break-all ${row.mono ? "font-mono text-xs" : ""}`}>
+                    {row.value}
+                  </span>
+                )}
               </div>
             );
           })}

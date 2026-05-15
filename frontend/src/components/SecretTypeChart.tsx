@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import type { Finding } from "../lib/types";
 
@@ -29,7 +30,7 @@ function buildTypeData(findings: Finding[]): DataPoint[] {
     .sort((a, b) => b.value - a.value);
 }
 
-export function SecretTypeChart({ findings }: { findings: Finding[] }) {
+export const SecretTypeChart = memo(function SecretTypeChart({ findings }: { findings: Finding[] }) {
   const data = buildTypeData(findings);
 
   if (data.length === 0) {
@@ -73,4 +74,4 @@ export function SecretTypeChart({ findings }: { findings: Finding[] }) {
       </PieChart>
     </ResponsiveContainer>
   );
-}
+});

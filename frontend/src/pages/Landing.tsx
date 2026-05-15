@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useScanStore } from "../stores/scanStore";
 import type { ScanCreate, ScanSummary } from "../lib/types";
@@ -18,7 +18,9 @@ const STATUS_STYLE: Record<string, string> = {
   failed: "text-tokyo-red bg-tokyo-red/10",
 };
 
-function ScanCard({ scan }: { scan: ScanSummary }) {
+function ScanCard({ scan, onDelete }: { scan: ScanSummary; onDelete: (id: string) => void }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const isActive = scan.status === "queued" || scan.status === "running";
   const date = scan.completed_at ?? scan.created_at;
   return (
     <div className="bg-tokyo-bg-highlight border border-tokyo-border rounded-lg p-4 hover:border-tokyo-comment/50 transition-colors">
@@ -46,7 +48,38 @@ function ScanCard({ scan }: { scan: ScanSummary }) {
             {scan.repos_scanned}/{scan.repos_total} repos
           </p>
         </div>
+        {!isActive && (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            title="Delete scan"
+            className="shrink-0 p-1 rounded text-tokyo-comment hover:text-tokyo-red hover:bg-tokyo-red/10 transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M6.67 7.33v4M9.33 7.33v4" />
+              <path d="M3.33 4l.67 9.33a1.33 1.33 0 001.33 1.34h5.34a1.33 1.33 0 001.33-1.34L12.67 4" />
+            </svg>
+          </button>
+        )}
       </div>
+
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div className="flex items-center gap-2 mb-3 p-2 rounded bg-tokyo-red/10 border border-tokyo-red/30">
+          <span className="text-tokyo-red text-xs font-mono">Delete this scan and all findings?</span>
+          <button
+            onClick={() => { onDelete(scan.id); setConfirmDelete(false); }}
+            className="ml-auto px-2 py-0.5 rounded text-xs font-bold bg-tokyo-red text-tokyo-bg hover:opacity-90 transition-opacity"
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => setConfirmDelete(false)}
+            className="px-2 py-0.5 rounded text-xs font-bold border border-tokyo-border text-tokyo-comment hover:text-tokyo-fg transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Severity pills */}
       {scan.findings_total > 0 && (
@@ -108,6 +141,9 @@ export function Landing() {
   const [scanType, setScanType] = useState<"quick" | "deep">("quick");
   const [targetType, setTargetType] = useState<"org" | "repo">("org");
   const [token, setToken] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const queryClient = useQueryClient();
 
   const { data: scanList } = useQuery({
     queryKey: ["scans"],
@@ -122,9 +158,32 @@ export function Landing() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteScan(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scans"] }),
+  });
+
+  const validateInputs = (): string | null => {
+    const t = target.trim();
+    if (!t) return "Target is required";
+    if (targetType === "repo" && !/^[^/]+\/[^/]+$/.test(t))
+      return "Repo must be in owner/repo format";
+    if (targetType === "org" && /\//.test(t))
+      return "Org/user must not contain a slash";
+    const tok = token.trim();
+    if (tok && !tok.startsWith("ghp_") && !tok.startsWith("github_pat_") && !tok.startsWith("gho_"))
+      return "Token doesn't look like a GitHub PAT (expected ghp_, github_pat_, or gho_ prefix)";
+    return null;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!target.trim()) return;
+    const err = validateInputs();
+    if (err) {
+      setValidationError(err);
+      return;
+    }
+    setValidationError(null);
     mutation.mutate({
       target_type: targetType,
       target_name: target.trim(),
@@ -226,6 +285,9 @@ export function Landing() {
                 className="w-full px-3 py-2.5 bg-tokyo-bg border border-tokyo-border rounded-lg text-tokyo-fg placeholder-tokyo-comment font-mono text-sm focus:outline-none focus:border-tokyo-blue transition-colors"
               />
             </div>
+            {validationError && (
+              <p className="text-tokyo-red text-xs">{validationError}</p>
+            )}
             {mutation.isError && (
               <p className="text-tokyo-red text-xs">{mutation.error.message}</p>
             )}
@@ -240,7 +302,7 @@ export function Landing() {
             </h2>
             <div className="space-y-3">
               {scans.map((scan) => (
-                <ScanCard key={scan.id} scan={scan} />
+                <ScanCard key={scan.id} scan={scan} onDelete={(id) => deleteMutation.mutate(id)} />
               ))}
             </div>
           </div>

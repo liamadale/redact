@@ -1,6 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
 from datetime import datetime
 
 from app.scanning.deep_scan import (
@@ -183,3 +184,86 @@ def test_run_trufflehog_uses_bare_flag():
         cmd = mock_popen.call_args[0][0]
         assert "--bare" in cmd
         assert "--all-branches" not in cmd
+
+
+def test_run_deep_scan_missing_scan_raises():
+    """Fix 1.2: run_deep_scan must raise ValueError when scan row is missing."""
+    import uuid
+    from unittest.mock import MagicMock
+
+    from app.scanning.deep_scan import run_deep_scan
+
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    with pytest.raises(ValueError, match="not found"):
+        run_deep_scan(uuid.uuid4(), [], db)
+
+
+def test_run_deep_scan_finally_does_not_mask_original_exception():
+    """Fix 1.7: a DB error in the finally block must not replace the original exception."""
+    import uuid
+    from unittest.mock import MagicMock
+
+    from app.scanning.deep_scan import run_deep_scan
+
+    original_error = RuntimeError("original scan failure")
+
+    scan = MagicMock()
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = scan
+
+    commit_calls = []
+
+    def commit_side_effect():
+        commit_calls.append(len(commit_calls))
+        # First two commits (repos_total, status=failed) succeed;
+        # third commit (in finally block) raises to test masking fix.
+        if len(commit_calls) >= 3:
+            raise RuntimeError("db commit in finally failed")
+
+    db.commit.side_effect = commit_side_effect
+
+    # Repos with len() but iteration raises the original error
+    class ErrorRepos:
+        def __len__(self):
+            return 1
+
+        def __iter__(self):
+            raise original_error
+
+    with pytest.raises(RuntimeError, match="original scan failure"):
+        run_deep_scan(uuid.uuid4(), ErrorRepos(), db)
+
+
+def test_clone_repo_uses_basic_auth_not_bearer():
+    """Regression: GitHub git HTTP transport requires Basic auth, not Bearer.
+
+    Classic PATs (ghp_*) must be sent as:
+      Authorization: Basic base64("x-access-token:{token}")
+    Using 'Bearer {token}' causes HTTP 401 → git exit code 128.
+    """
+    import base64
+    from pathlib import Path
+
+    from app.scanning.deep_scan import _clone_repo
+
+    with patch("app.scanning.deep_scan.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+
+        _clone_repo(
+            "https://github.com/org/repo.git",
+            Path("/tmp/test-dest"),
+            token="ghp_testtoken123",
+        )
+
+        cmd = mock_run.call_args[0][0]
+        header_arg = cmd[2]  # the http.extraHeader=... value
+
+        assert "Bearer" not in header_arg
+        assert "Authorization: Basic " in header_arg
+
+        # Verify the base64 payload decodes to x-access-token:{token}
+        b64_value = header_arg.split("Basic ")[1]
+        decoded = base64.b64decode(b64_value).decode()
+        assert decoded == "x-access-token:ghp_testtoken123"

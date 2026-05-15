@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import logging
@@ -74,11 +75,16 @@ def _run_trufflehog(
                 continue
             findings.append(finding)
             if on_finding:
-                on_finding(finding)
+                try:
+                    on_finding(finding)
+                except Exception:
+                    logger.warning("on_finding callback failed", exc_info=True)
 
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
+    except OSError as e:
+        logger.warning("TruffleHog stdout read error (process likely killed): %s", e)
     finally:
         timer.cancel()
         proc.stdout.close()
@@ -157,8 +163,12 @@ def _parse_finding(raw: dict, repo_name: str) -> dict:
 
 def _clone_repo(clone_url: str, dest: Path, token: str | None = None, is_private: bool = False) -> None:
     if token and is_private and "github.com" in clone_url:
+        credentials = base64.b64encode(
+            f"x-access-token:{token}".encode()
+        ).decode()
         cmd = [
-            "git", "-c", f"http.extraHeader=Authorization: Bearer {token}",
+            "git", "-c",
+            f"http.extraHeader=Authorization: Basic {credentials}",
             "clone", "--mirror", clone_url, str(dest),
         ]
     else:
@@ -185,11 +195,16 @@ def _scan_repo(
     def on_finding(raw_finding: dict) -> None:
         parsed_findings.append(_parse_finding(raw_finding, repo_name))
 
-    _, did_timeout = _run_trufflehog(str(repo_dir), timeout=timeout, on_finding=on_finding)
-    if did_timeout:
-        logger.warning("TruffleHog timed out on %s", repo_name)
+    try:
+        _, did_timeout = _run_trufflehog(str(repo_dir), timeout=timeout, on_finding=on_finding)
+        if did_timeout:
+            logger.warning("TruffleHog timed out on %s", repo_name)
+    except Exception as e:
+        logger.error("TruffleHog failed on %s: %s", repo_name, e)
+        return repo_name, parsed_findings, False
+    finally:
+        shutil.rmtree(repo_dir, ignore_errors=True)
 
-    shutil.rmtree(repo_dir, ignore_errors=True)
     return repo_name, parsed_findings, did_timeout
 
 
@@ -211,6 +226,8 @@ def run_deep_scan(
     from app.scan_control import clear_signal, get_signal
 
     scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise ValueError(f"Scan {scan_id} not found")
     scan.status = "running"
     scan.repos_total = len(repos)
     db.commit()
@@ -219,6 +236,7 @@ def run_deep_scan(
     scan_dir.mkdir(parents=True, exist_ok=True)
 
     any_timeout = False
+    any_repo_error = False
     repos_done = 0
     scan_id_str = str(scan_id)
 
@@ -263,7 +281,22 @@ def run_deep_scan(
                                 on_progress({"event": "cancelled"})
                             return
 
-                repo_name, parsed_findings, did_timeout = future.result()
+                try:
+                    repo_name, parsed_findings, did_timeout = future.result()
+                except Exception as e:
+                    failed_repo = futures[future]
+                    repo_name = failed_repo["full_name"]
+                    logger.error("Repo %s failed: %s", repo_name, e)
+                    scan.scan_warnings = list(scan.scan_warnings or []) + [
+                        f"{repo_name}: scan error — {e}"
+                    ]
+                    repos_done += 1
+                    scan.repos_scanned = repos_done
+                    db.commit()
+                    any_repo_error = True
+                    if on_progress:
+                        on_progress({"event": "repo_error", "repo": repo_name, "error": str(e)})
+                    continue
 
                 if on_progress:
                     on_progress({"event": "repo_started", "repo": repo_name})
@@ -280,6 +313,12 @@ def run_deep_scan(
                             "type": parsed["secret_type"],
                         })
 
+                if did_timeout:
+                    logger.warning("TruffleHog timed out on %s", repo_name)
+                    timeout_msg = f"Scan timed out after {timeout}s — results may be incomplete"
+                    if on_progress:
+                        on_progress({"event": "repo_timeout", "repo": repo_name, "reason": timeout_msg})
+                    scan.scan_warnings = list(scan.scan_warnings or []) + [f"{repo_name}: {timeout_msg}"]
                 db.commit()
 
                 repos_done += 1
@@ -292,7 +331,7 @@ def run_deep_scan(
 
         db.refresh(scan)
         if scan.status not in ("cancelled", "paused"):
-            scan.status = "partial" if any_timeout else "completed"
+            scan.status = "partial" if (any_timeout or any_repo_error) else "completed"
             scan.completed_at = datetime.now(timezone.utc)
             db.commit()
 
@@ -305,9 +344,12 @@ def run_deep_scan(
         raise
     finally:
         shutil.rmtree(scan_dir, ignore_errors=True)
-        db.refresh(scan)
-        scan.current_repo = None
-        db.commit()
+        try:
+            scan.current_repo = None
+            db.commit()
+        except Exception:
+            logger.error("Failed to clear current_repo for scan %s", scan_id)
+            db.rollback()
 
 
 def _upsert_finding(scan_id: uuid.UUID, parsed: dict, db: Session) -> None:

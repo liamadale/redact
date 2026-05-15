@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { useSSE } from "../hooks/useSSE";
 import { useScanStore, type LogEntry } from "../stores/scanStore";
 import { api } from "../lib/api";
+import { PageLoader } from "../components/PageLoader";
+import { QueryError } from "../components/QueryError";
 import type { Scan, Finding } from "../lib/types";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -215,13 +217,35 @@ function FindingRow({ finding, scanId }: { finding: Finding; scanId: string }) {
           )}
         </div>
         <p className="text-tokyo-comment text-[10px] font-mono truncate">{finding.repo_name}</p>
-        <p className="text-tokyo-comment/50 text-[10px] font-mono truncate">
-          {finding.file_path}
-          {finding.line_number ? `:${finding.line_number}` : ""}
+        <div className="flex items-center gap-1 text-[10px] font-mono">
+          <span className="text-tokyo-comment/50 truncate">
+            {finding.file_path}
+            {finding.line_number ? `:${finding.line_number}` : ""}
+            {finding.commit_sha && (
+              <span className="ml-1 text-tokyo-border/70">#{finding.commit_sha.slice(0, 7)}</span>
+            )}
+          </span>
           {finding.commit_sha && (
-            <span className="ml-1 text-tokyo-border/70">#{finding.commit_sha.slice(0, 7)}</span>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const url = `https://github.com/${finding.repo_name}/blob/${finding.commit_sha}/${finding.file_path}${finding.line_number ? `#L${finding.line_number}` : ""}`;
+                window.open(url, "_blank", "noopener,noreferrer");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") e.currentTarget.click();
+              }}
+              className="shrink-0 text-tokyo-comment/30 hover:text-tokyo-blue transition-colors cursor-pointer"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                <path d="M5.5 1H9v3.5M9 1L4.5 5.5M2 2.5H1v6.5h6.5V8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </span>
           )}
-        </p>
+        </div>
       </div>
       <span className="text-tokyo-comment/30 text-[10px] opacity-0 group-hover:opacity-100 shrink-0 mt-0.5">→</span>
     </Link>
@@ -318,13 +342,14 @@ export function ScanView() {
   const { id } = useParams<{ id: string }>();
   useSSE(id ?? null);
 
-  const logs      = useScanStore((s) => s.logs);
+  const logs             = useScanStore((s) => s.logs);
+  const connectionStatus = useScanStore((s) => s.connectionStatus);
   const logEndRef = useRef<HTMLDivElement>(null);
   const [elapsed,    setElapsed]    = useState(0);
   const [autoScroll, setAutoScroll] = useState(true);
   const [logFilter,  setLogFilter]  = useState<LogFilter>("all");
 
-  const { data: scan } = useQuery({
+  const { data: scan, isError: scanError, error: scanErrorObj, refetch: refetchScan } = useQuery({
     queryKey: ["scan", id],
     queryFn: () => api.getScan(id!),
     enabled: !!id,
@@ -358,24 +383,22 @@ export function ScanView() {
     if (autoScroll) logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs, autoScroll]);
 
+  const filteredLogs = useMemo(() => filterLogs(logs, logFilter), [logs, logFilter]);
+  const warnCount    = useMemo(() => logs.filter((l) => l.level === "warn").length, [logs]);
+  const errorCount   = useMemo(() => logs.filter((l) => l.level === "error").length, [logs]);
+
+  if (scanError) {
+    return <QueryError error={scanErrorObj as Error} retry={() => void refetchScan()} />;
+  }
+
   if (!scan) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="flex items-center gap-2 text-tokyo-comment">
-          <span className="w-2 h-2 rounded-full bg-tokyo-blue animate-pulse" />
-          <span className="text-sm font-mono">Connecting...</span>
-        </div>
-      </div>
-    );
+    return <PageLoader />;
   }
 
   const isActive    = ["running", "queued", "paused"].includes(scan.status);
   const isDone      = ["completed", "partial", "failed", "cancelled"].includes(scan.status);
   const pct         = scan.repos_total > 0 ? Math.round((scan.repos_scanned / scan.repos_total) * 100) : null;
   const allFindings = findings?.findings ?? [];
-  const filteredLogs = filterLogs(logs, logFilter);
-  const warnCount    = logs.filter((l) => l.level === "warn").length;
-  const errorCount   = logs.filter((l) => l.level === "error").length;
 
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col bg-tokyo-bg overflow-hidden">
@@ -484,6 +507,8 @@ export function ScanView() {
               {/* Filter: ALL */}
               <button
                 type="button"
+                aria-label="Show all log entries"
+                aria-pressed={logFilter === "all"}
                 onClick={() => setLogFilter("all")}
                 className={`px-2 py-0.5 text-[9px] font-mono rounded border transition-colors ${
                   logFilter === "all"
@@ -497,6 +522,8 @@ export function ScanView() {
               {warnCount > 0 && (
                 <button
                   type="button"
+                  aria-label="Show only warnings and errors"
+                  aria-pressed={logFilter === "warn"}
                   onClick={() => setLogFilter("warn")}
                   className={`px-2 py-0.5 text-[9px] font-mono rounded border transition-colors ${
                     logFilter === "warn"
@@ -511,6 +538,8 @@ export function ScanView() {
               {errorCount > 0 && (
                 <button
                   type="button"
+                  aria-label="Show only errors"
+                  aria-pressed={logFilter === "error"}
                   onClick={() => setLogFilter("error")}
                   className={`px-2 py-0.5 text-[9px] font-mono rounded border transition-colors ${
                     logFilter === "error"
@@ -523,18 +552,37 @@ export function ScanView() {
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setAutoScroll((v) => !v)}
-              className={`text-[9px] font-mono px-2 py-0.5 rounded border transition-colors ${
-                autoScroll
-                  ? "border-tokyo-blue/40 text-tokyo-blue/70"
-                  : "border-tokyo-border/40 text-tokyo-comment/40 hover:border-tokyo-border"
-              }`}
-            >
-              {autoScroll ? "⇣ LIVE" : "⇣ PAUSED"}
-            </button>
+            <div className="flex items-center gap-2">
+              {isActive && connectionStatus !== "disconnected" && (
+                <span className={`inline-flex items-center gap-1 text-[9px] font-mono font-bold ${
+                  connectionStatus === "live" ? "text-tokyo-green" : "text-tokyo-yellow"
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    connectionStatus === "live" ? "bg-tokyo-green animate-pulse" : "bg-tokyo-yellow"
+                  }`} />
+                  {connectionStatus === "live" ? "LIVE" : "POLLING"}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setAutoScroll((v) => !v)}
+                className={`text-[9px] font-mono px-2 py-0.5 rounded border transition-colors ${
+                  autoScroll
+                    ? "border-tokyo-blue/40 text-tokyo-blue/70"
+                    : "border-tokyo-border/40 text-tokyo-comment/40 hover:border-tokyo-border"
+                }`}
+              >
+                {autoScroll ? "⇣ LIVE" : "⇣ PAUSED"}
+              </button>
+            </div>
           </div>
+
+          {/* Polling fallback banner */}
+          {isActive && connectionStatus === "polling" && (
+            <div className="px-4 py-1.5 border-b border-tokyo-yellow/20 bg-tokyo-yellow/5 text-[10px] font-mono text-tokyo-yellow/70 shrink-0">
+              SSE stream lost — results updating via poll every 5s
+            </div>
+          )}
 
           {/* Log body */}
           <div className="flex-1 overflow-y-auto p-3 font-mono leading-5 space-y-0">

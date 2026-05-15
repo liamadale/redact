@@ -36,9 +36,16 @@ async def run_quick_scan(
     token: str | None,
     db: Session,
     allow_private: bool = False,
+    on_warning=None,
 ) -> None:
     """Run a quick scan using GitHub Search API and store hits."""
     adapter = GitHubAdapter(token=token)
+    accumulated_warnings: list[str] = []
+
+    def _warn(msg: str) -> None:
+        accumulated_warnings.append(msg)
+        if on_warning:
+            on_warning(msg)
 
     try:
         # Update scan status
@@ -49,8 +56,13 @@ async def run_quick_scan(
         scan.status = "running"
         db.commit()
 
-        hits = await adapter.search_code(target, SEARCH_PATTERNS)
+        hits = await adapter.search_code(target, SEARCH_PATTERNS, on_warning=_warn)
 
+        if accumulated_warnings:
+            scan.scan_warnings = list(scan.scan_warnings or []) + accumulated_warnings
+
+        batch_size = 100
+        batch_count = 0
         for hit in hits:
             if hit.repo.is_private and not allow_private:
                 continue
@@ -67,9 +79,13 @@ async def run_quick_scan(
                 html_url=hit.html_url,
             )
             db.add(db_hit)
+            batch_count += 1
+            if batch_count % batch_size == 0:
+                db.flush()
 
         scan.status = "completed"
-        scan.completed_at = datetime.now(timezone.utc)
+        # replace(tzinfo=None): column is TIMESTAMP WITHOUT TIME ZONE
+        scan.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
         logger.info("Quick scan %s completed with %d hits", scan_id, len(hits))
 
