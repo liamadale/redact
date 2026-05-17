@@ -163,14 +163,12 @@ function RepoSearchResults() {
 
   const isQuick = scan.scan_type === "quick";
   const isDeep = scan.scan_type === "deep";
-  const title = isQuick ? "Repository Search Results" : "Repository Summary";
 
   return (
     <div className="min-h-screen bg-tokyo-bg px-6 py-8">
       <div className="max-w-7xl mx-auto">
         <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-xs font-mono uppercase tracking-widest text-tokyo-comment">{title}</p>
             <h1 className="mt-2 text-3xl font-bold text-tokyo-fg">{scan.target_name}</h1>
             <p className="mt-2 text-sm text-tokyo-comment">
               {scan.scan_type === "quick" ? "High-level repository search results from the quick scan." : "Findings grouped by repository."}

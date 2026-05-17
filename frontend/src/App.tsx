@@ -46,7 +46,7 @@ function usePageLabel(): string | null {
   if (matchPath("/metrics/:id", pathname)) return "Metrics";
   if (matchPath("/scans/:id/report", pathname)) return "Report";
   if (matchPath("/scans/:id/findings/:findingId", pathname)) return "Finding";
-  if (matchPath("/scans/:id/repos", pathname)) return "Repo Search";
+  if (matchPath("/scans/:id/repos", pathname)) return "Triage";
   if (matchPath("/scans/:id", pathname)) return "Scan";
   return null;
 }
@@ -105,7 +105,7 @@ function Nav() {
                   <NavLink to={`/scans/${scanId}/report`} label="Report" />
                 </>
               )}
-              <NavLink to={`/scans/${scanId}/repos`} label="Repo Search" />
+              <NavLink to={`/scans/${scanId}/repos`} label="Triage" />
               <span className="w-px h-4 bg-tokyo-border mx-1" />
             </>
           )}
