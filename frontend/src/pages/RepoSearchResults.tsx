@@ -190,7 +190,7 @@ function RepoSearchResults() {
             )}
             <Link
               to={`/scans/${scanId}`}
-              className="inline-flex items-center justify-center rounded-md border border-tokyo-border bg-tokyo-bg-highlight px-4 py-2 text-sm font-semibold text-tokyo-comment hover:text-tokyo-fg"
+              className="inline-flex items-center justify-center rounded-md border border-tokyo-border bg-tokyo-bg-highlight px-4 py-2 text-sm font-semibold text-tokyo-fg hover:bg-tokyo-blue/15"
             >
               Back to scan
             </Link>
@@ -220,7 +220,7 @@ function RepoSearchResults() {
             {repoSummaries.map((repo) => {
               const isSelected = selectedRepos.includes(repo.repo);
               return (
-                <div key={repo.repo} className="group rounded-3xl border border-tokyo-border bg-tokyo-bg-highlight p-5 transition hover:border-tokyo-blue/40">
+                <div key={repo.repo} className="group rounded-lg border border-tokyo-border bg-tokyo-bg-highlight p-5 transition hover:border-tokyo-blue/40">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2">  
