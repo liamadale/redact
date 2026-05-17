@@ -9,6 +9,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard").then((m) => ({ default:
 const FindingDetail = lazy(() => import("./pages/FindingDetail").then((m) => ({ default: m.FindingDetail })));
 const Metrics = lazy(() => import("./pages/Metrics").then((m) => ({ default: m.Metrics })));
 const Report = lazy(() => import("./pages/Report").then((m) => ({ default: m.Report })));
+const RepoSearchResults = lazy(() => import("./pages/RepoSearchResults").then((m) => ({ default: m.RepoSearchResults })));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000 } },
@@ -26,6 +27,7 @@ function useScanIdFromRoute(): string | null {
   const { pathname } = useLocation();
   const patterns = [
     "/scans/:id",
+    "/scans/:id/repos",
     "/scans/:id/findings/:findingId",
     "/scans/:id/report",
     "/dashboard/:id",
@@ -44,6 +46,7 @@ function usePageLabel(): string | null {
   if (matchPath("/metrics/:id", pathname)) return "Metrics";
   if (matchPath("/scans/:id/report", pathname)) return "Report";
   if (matchPath("/scans/:id/findings/:findingId", pathname)) return "Finding";
+  if (matchPath("/scans/:id/repos", pathname)) return "Triage";
   if (matchPath("/scans/:id", pathname)) return "Scan";
   return null;
 }
@@ -92,12 +95,17 @@ function Nav() {
 
         {/* Right: context actions */}
         <div className="flex items-center gap-2 shrink-0">
-          {scan && scanId && scan.scan_type === "deep" && (
+          {scan && scanId && (
             <>
-              <NavLink to={`/scans/${scanId}`} label="Scan" />
-              <NavLink to={`/dashboard/${scanId}`} label="Dashboard" />
-              <NavLink to={`/metrics/${scanId}`} label="Metrics" />
-              <NavLink to={`/scans/${scanId}/report`} label="Report" />
+              {scan.scan_type === "deep" && (
+                <>
+                  <NavLink to={`/scans/${scanId}`} label="Scan" />
+                  <NavLink to={`/dashboard/${scanId}`} label="Dashboard" />
+                  <NavLink to={`/metrics/${scanId}`} label="Metrics" />
+                  <NavLink to={`/scans/${scanId}/report`} label="Report" />
+                </>
+              )}
+              <NavLink to={`/scans/${scanId}/repos`} label="Triage" />
               <span className="w-px h-4 bg-tokyo-border mx-1" />
             </>
           )}
@@ -140,6 +148,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/scans/:id" element={<ScanView />} />
+            <Route path="/scans/:scanId/repos" element={<RepoSearchResults />} />
             <Route path="/scans/:scanId/findings/:findingId" element={<FindingDetail />} />
             <Route path="/scans/:scanId/report" element={<Report />} />
             <Route path="/dashboard/:id" element={<Dashboard />} />
