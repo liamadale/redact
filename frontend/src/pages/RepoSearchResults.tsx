@@ -173,7 +173,7 @@ function RepoSearchResults() {
             <p className="text-xs font-mono uppercase tracking-widest text-tokyo-comment">{title}</p>
             <h1 className="mt-2 text-3xl font-bold text-tokyo-fg">{scan.target_name}</h1>
             <p className="mt-2 text-sm text-tokyo-comment">
-              {scan.scan_type === "quick" ? "High-level repository search results from the quick scan." : "Repository findings grouped by repo."}
+              {scan.scan_type === "quick" ? "High-level repository search results from the quick scan." : "Findings grouped by repository."}
             </p>
           </div>
 
@@ -223,18 +223,32 @@ function RepoSearchResults() {
                 <div key={repo.repo} className="group rounded-3xl border border-tokyo-border bg-tokyo-bg-highlight p-5 transition hover:border-tokyo-blue/40">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2">  
+                        
+                        {/* Card selector */}
                         <input
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => handleToggleRepo(repo.repo)}
-                          className="h-4 w-4 rounded border-tokyo-border bg-tokyo-bg text-tokyo-blue focus:ring-tokyo-blue"
+                          className="cursor-pointer"
                         />
-                        <h2 className="text-base font-semibold text-tokyo-fg break-words">{repo.repo}</h2>
+
+                        {/* Repo name */}
+                        <h2 className="text-base font-semibold text-tokyo-fg break-words">
+                          {repo.repo}
+                        </h2>
                       </div>
                       <p className="mt-2 text-[11px] text-tokyo-comment">{isQuick ? `${repo.totalHits ?? 0} search hits` : `${repo.totalFindings ?? 0} findings`}</p>
                     </div>
-                    <div className="shrink-0 rounded-full border border-tokyo-border bg-tokyo-bg px-3 py-1 text-[10px] font-mono uppercase text-tokyo-comment">
+
+                    {/* Maximum finding severity */}
+                    <div
+                      className={`shrink-0 bg-tokyo-blue rounded border border-tokyo-border px-3 py-1 text-[10px] font-mono uppercase ${
+                        isQuick
+                          ? "bg-tokyo-bg text-tokyo-comment"
+                          : `${SEVERITY_CONFIG[repo.maxSeverity ?? "low"].bg} ${SEVERITY_CONFIG[repo.maxSeverity ?? "low"].text}`
+                      }`}
+                    >
                       {isQuick ? "SEARCH" : repo.maxSeverity?.toUpperCase() ?? "LOW"}
                     </div>
                   </div>
@@ -262,13 +276,13 @@ function RepoSearchResults() {
                       type="button"
                       onClick={() => deepScanMutation.mutate(repo.repo)}
                       disabled={isDeepScanLoading}
-                      className="w-full rounded-md border border-tokyo-blue/40 bg-tokyo-blue/10 px-4 py-2 text-sm font-semibold text-tokyo-blue transition hover:bg-tokyo-blue/15 disabled:opacity-50 sm:w-auto"
+                      className="w-full rounded-md border border-tokyo-blue/40 bg-tokyo-blue/10 px-4 py-2 text-sm font-semibold text-tokyo-blue cursor-pointer transition hover:bg-tokyo-blue/15 disabled:opacity-50 sm:w-auto"
                     >
                       {isDeepScanLoading ? "Queuing..." : "Deep scan repo"}
                     </button>
                     <Link
                       to={`/scans/${scanId}`}
-                      className="w-full text-center rounded-md border border-tokyo-border bg-tokyo-bg px-4 py-2 text-sm text-tokyo-comment transition hover:text-tokyo-fg sm:w-auto"
+                      className="w-full text-center rounded-md border border-tokyo-border bg-tokyo-blue/10 px-4 py-2 text-sm text-tokyo-fg sm:w-auto transition hover:bg-tokyo-blue/15"
                     >
                       View scan
                     </Link>
