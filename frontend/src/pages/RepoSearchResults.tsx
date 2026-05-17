@@ -225,18 +225,17 @@ function RepoSearchResults() {
                     <div>
                       <div className="flex items-center gap-2">  
                         
-                        {/* Card selector */}
+                        <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => handleToggleRepo(repo.repo)}
                           className="cursor-pointer"
                         />
-
-                        {/* Repo name */}
                         <h2 className="text-base font-semibold text-tokyo-fg break-words">
                           {repo.repo}
                         </h2>
+                      </label>
                       </div>
                       <p className="mt-2 text-[11px] text-tokyo-comment">{isQuick ? `${repo.totalHits ?? 0} search hits` : `${repo.totalFindings ?? 0} findings`}</p>
                     </div>
