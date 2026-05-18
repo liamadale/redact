@@ -8,10 +8,16 @@ import type { Scan, Finding } from "../lib/types";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
-  const s = (seconds % 60).toString().padStart(2, "0");
-  return `${m}:${s}`;
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60).toString().padStart(2, "0");
+  const secs = (seconds % 60).toString().padStart(2, "0");
+
+  if (hours > 0) {
+    return `${hours}:${minutes}:${secs}`;
+  }
+
+  return `${minutes}:${secs}`;
 }
 
 function formatTime(date: Date): string {
@@ -321,8 +327,14 @@ export function ScanView() {
   const logs      = useScanStore((s) => s.logs);
   const logEndRef = useRef<HTMLDivElement>(null);
   const [elapsed,    setElapsed]    = useState(0);
+  const [estimatedRemainingSeconds, setEstimatedRemainingSeconds] = useState<number | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [logFilter,  setLogFilter]  = useState<LogFilter>("all");
+
+  // Keep the last seen repo's count, so the ETA only recalculates when
+  // progress updates
+  const prevReposScannedRef = useRef<number>(0);
+  const prevReposTotalRef = useRef<number>(0);
 
   const { data: scan } = useQuery({
     queryKey: ["scan", id],
@@ -349,10 +361,49 @@ export function ScanView() {
 
   useEffect(() => {
     if (!scan) return;
-    if (!["running", "queued"].includes(scan.status)) return;
-    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(t);
-  }, [scan]);
+    if (scan.status !== "running") return;
+
+    // Decrement the current ETA once per second while the scan is actively
+    // running; this makes the displayed countdown feel like a live timer even
+    // while one repo is still being scanned
+    const timer = setInterval(() => {
+      setElapsed((e) => e + 1);
+      setEstimatedRemainingSeconds((value) =>
+        value !== null && value > 0 ? value - 1 : value
+      );
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [scan?.status]);
+
+  useEffect(() => {
+    // Recalculate ETA only when the scan is running and repo progress changes;
+    // We find the remaining estimate by calculating the average time for
+    // completed repos, then multiplying that by the number of remaining repos
+    if (!scan || scan.status !== "running" || scan.repos_total <= 0 || scan.repos_scanned <= 0) {
+      setEstimatedRemainingSeconds(null);
+      prevReposScannedRef.current = scan?.repos_scanned ?? 0;
+      prevReposTotalRef.current = scan?.repos_total ?? 0;
+      return;
+    }
+
+    if (
+      scan.repos_scanned !== prevReposScannedRef.current ||
+      scan.repos_total !== prevReposTotalRef.current
+    ) {
+      const remainingRepos = Math.max(scan.repos_total - scan.repos_scanned, 0);
+      const avgSecondsPerRepo = scan.repos_scanned > 0 ? elapsed / scan.repos_scanned : 0;
+
+      setEstimatedRemainingSeconds(
+        remainingRepos > 0 && avgSecondsPerRepo > 0
+          ? Math.round(remainingRepos * avgSecondsPerRepo)
+          : null
+      );
+
+      prevReposScannedRef.current = scan.repos_scanned;
+      prevReposTotalRef.current = scan.repos_total;
+    }
+  }, [scan?.repos_scanned, scan?.repos_total, scan?.status]);
 
   useEffect(() => {
     if (autoScroll) logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -400,7 +451,7 @@ export function ScanView() {
                 {isActive && (
                   <>
                     <span className="text-tokyo-border">·</span>
-                    <span className="text-tokyo-yellow tabular-nums">{formatElapsed(elapsed)}</span>
+                    <span className="text-tokyo-yellow tabular-nums">{formatDuration(elapsed)}</span>
                   </>
                 )}
                 {scan.completed_at && (
@@ -445,6 +496,20 @@ export function ScanView() {
                         <span className="text-tokyo-cyan font-bold">{scan.current_repo}</span>
                         <span className="inline-block w-1.5 h-[0.7em] bg-tokyo-cyan/70 ml-0.5 align-middle animate-[cursor-blink_1s_step-end_infinite]" />
                       </>
+                    )}
+                    {estimatedRemainingSeconds !== null ? (
+                    <>
+                        <span className="text-tokyo-border mx-2">·</span>
+                        <span>Estimated Time Remaining: </span>
+                        <span className="text-tokyo-yellow font-bold">
+                        {formatDuration(estimatedRemainingSeconds)}
+                        </span>
+                    </>
+                    ) : (
+                    <>
+                        <span className="text-tokyo-border mx-2">·</span>
+                        <span>Calculating time remaining...</span>
+                    </>
                     )}
                   </span>
                 )}
