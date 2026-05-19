@@ -10,6 +10,8 @@ import {
   Pie,
   PieChart,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
@@ -31,6 +33,74 @@ const TOOLTIP_STYLE = {
   color: "#c0caf5",
   fontSize: 12,
 };
+
+type TimeToDetectPoint = {
+  x: number;
+  days: number;
+  repo: string;
+  severity: string;
+};
+
+const CALMS_LABELS = {
+  totalScans: "Culture",
+  reposScanned: "Automation",
+  secretsFound: "Lean",
+  avgTimeToDetect: "Measurement",
+};
+
+// Maximum reasonable days between commit and scan (5 years)
+const MAX_DAYS_TO_DETECT = 1825;
+const MS_PER_DAY = 86400000;
+
+function formatCommitDate(value: number) {
+  // Gracefully handle any unexpected zero or negative values that slip past
+  if (value <= 0) return "Unknown";
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function buildTimeToDetectData(
+  findings: Finding[],
+  scanCompletedAt: string | null,
+  scanStartedAt: string | null,
+): TimeToDetectPoint[] {
+  const scanDate = scanCompletedAt ?? scanStartedAt;
+  if (!scanDate) return [];
+  
+  const scanMs = new Date(scanDate).getTime();
+  // Ensure scan date is valid and isn't stuck at Unix Epoch (0)
+  if (isNaN(scanMs) || scanMs <= 0) return [];
+
+  return findings
+    .filter((f): f is Finding & { commit_date: string } => {
+      if (!f.commit_date || f.commit_date.trim() === "") return false;
+      
+      const commitMs = new Date(f.commit_date).getTime();
+      
+      // Filter out invalid, zero, or epoch-fallback timestamps
+      if (isNaN(commitMs) || commitMs <= 0) return false;
+      
+      // Filter out future commits
+      if (commitMs > scanMs) return false;
+
+      const days = Math.round((scanMs - commitMs) / MS_PER_DAY);
+      return days >= 0 && days <= MAX_DAYS_TO_DETECT;
+    })
+    .map((f) => {
+      const commitMs = new Date(f.commit_date).getTime();
+      const days = Math.max(0, Math.round((scanMs - commitMs) / MS_PER_DAY));
+      return {
+        x: commitMs,
+        days,
+        repo: f.repo_name,
+        severity: f.severity,
+      };
+    })
+    .sort((a, b) => a.x - b.x)
+    .slice(0, 100);
+}
 
 interface RepoSevPoint {
   repo: string;
@@ -102,6 +172,10 @@ export function Metrics() {
   const repoSevData = useMemo(() => buildRepoSeverityData(allFindings), [allFindings]);
   const verifiedData = useMemo(() => buildVerifiedData(allFindings), [allFindings]);
   const authorData = useMemo(() => buildAuthorData(allFindings), [allFindings]);
+  const timeToDetectData = useMemo(
+    () => buildTimeToDetectData(allFindings, scan?.completed_at ?? null, scan?.started_at ?? null),
+    [allFindings, scan],
+  );
 
   const sevCounts = useMemo(() => {
     const c = { critical: 0, high: 0, medium: 0, low: 0 };
@@ -153,19 +227,23 @@ export function Metrics() {
             <div className="p-3 bg-tokyo-bg-highlight border border-tokyo-border rounded-lg">
               <p className="text-tokyo-comment text-xs">Total Scans</p>
               <p className="text-xl font-bold text-tokyo-fg">{aggregate.total_scans}</p>
+              <p className="text-tokyo-comment text-[9px] uppercase tracking-widest mt-5">{CALMS_LABELS.totalScans}</p>
             </div>
             <div className="p-3 bg-tokyo-bg-highlight border border-tokyo-border rounded-lg">
               <p className="text-tokyo-comment text-xs">Repos Scanned</p>
               <p className="text-xl font-bold text-tokyo-fg">{aggregate.total_repos_scanned}</p>
+              <p className="text-tokyo-comment text-[9px] uppercase tracking-widest mt-5">{CALMS_LABELS.reposScanned}</p>
             </div>
             <div className="p-3 bg-tokyo-bg-highlight border border-tokyo-border rounded-lg">
               <p className="text-tokyo-comment text-xs">Secrets Found</p>
               <p className="text-xl font-bold text-tokyo-red">{aggregate.total_findings}</p>
+              <p className="text-tokyo-comment text-[9px] uppercase tracking-widest mt-5">{CALMS_LABELS.secretsFound}</p>
             </div>
             <div className="p-3 bg-tokyo-bg-highlight border border-tokyo-border rounded-lg">
               <p className="text-tokyo-comment text-xs">Avg Time-to-Detect</p>
               <p className="text-xl font-bold text-tokyo-yellow">{formatTtd(aggregate.avg_time_to_detect_seconds)}</p>
               <p className="text-tokyo-comment text-[9px] font-mono">commit → scan</p>
+              <p className="text-tokyo-comment text-[9px] uppercase tracking-widest mt-2">{CALMS_LABELS.avgTimeToDetect}</p>
             </div>
           </div>
         </div>
@@ -191,6 +269,70 @@ export function Metrics() {
           </div>
         ))}
       </div>
+
+      <div className="mb-8 bg-tokyo-bg-highlight border border-tokyo-border rounded-lg p-4">
+        <p className="text-tokyo-comment text-xs uppercase tracking-wide">
+          Time-to-Detect (Commit Date vs. Scan Date)
+        </p>
+        {timeToDetectData.length === 0 ? (
+          <div className="h-2">
+            <div className="flex h-full items-center justify-center text-xs text-tokyo-comment">
+              No timeline data available
+            </div>
+          </div>
+        ) : (
+          <div className="h-72 mt-3">
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 8, right: 16, left: 0, bottom: 16 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#3b4261" />
+                <XAxis
+                  type="number"
+                  dataKey="x"
+                  tickFormatter={formatCommitDate}
+                  domain={['auto', 'auto']}
+                  padding={{ left: 10, right: 10 }}
+                  tick={{ fill: '#565f89', fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={{ stroke: '#3b4261' }}
+                  name="Commit Date"
+                />
+                <YAxis
+                  type="number"
+                  dataKey="days"
+                  allowDecimals={false}
+                  padding={{ top: 10, bottom: 10 }}
+                  tick={{ fill: '#565f89', fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                  name="Days to Detect"
+                />
+                <Tooltip
+                  contentStyle={TOOLTIP_STYLE}
+                  shared={false}
+                  cursor={{ strokeDasharray: '3 3' }}
+                  formatter={(value) => {
+                    if (value == null || Number(value) > MAX_DAYS_TO_DETECT) {
+                      return null; 
+                    }
+                    return [`${value}d`, "Time-to-Detect"];
+                  }}
+                  labelFormatter={(label) =>
+                    typeof label === "number" && label > 0
+                      ? `Commit: ${formatCommitDate(label)}`
+                      : "Unknown Commit Date"
+                  }
+                />
+                <Scatter
+                  data={timeToDetectData}
+                  fill="#7aa2f7"
+                  style={{ cursor: 'pointer' }}
+                />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+      
 
       {allFindings.length === 0 ? (
         <p className="text-tokyo-comment text-center py-16">No findings to analyze.</p>
