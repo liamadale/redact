@@ -48,9 +48,14 @@ const CALMS_LABELS = {
   avgTimeToDetect: "Measurement",
 };
 
-// Maximum reasonable days between commit and scan (5 years)
-const MAX_DAYS_TO_DETECT = 1825;
+// Calculates MAX_DAYS_TO_DETECT as the days between now and GitHub's release
+// on April 10, 2008; you can't have a repo on GitHub that's older than GitHub,
+// so anything exceeding that must be an outlier
+const GITHUB_LAUNCH_MS = new Date("2008-04-10T00:00:00Z").getTime();
 const MS_PER_DAY = 86400000;
+const nowMs = Date.now();
+const diffMs = nowMs - GITHUB_LAUNCH_MS;
+const MAX_DAYS_TO_DETECT = Math.max(0, Math.floor(diffMs / MS_PER_DAY));
 
 function formatCommitDate(value: number) {
   // Gracefully handle any unexpected zero or negative values that slip past
